@@ -1365,5 +1365,12 @@
   "cashbox_commission_section_hint": "Commission collected from agents on transfers. Does not affect central cashbox balance; for reporting only.",
   "cashbox_commission_row_hint": "Non-balance — reporting only",
   "cashbox_total_commission_info": "Commission (excluded from balance)",
-  "cashbox_no_commissions": "No commission movement yet."
+  "cashbox_no_commissions": "No commission movement yet.",
+  "mobile_coming_soon_body": "This screen will be added in the next step.",
+  "mobile_admin_ops_intro": "Quick access to common admin operations.",
+  "mobile_admin_ops_requests_desc": "View and manage pending requests.",
+  "mobile_admin_ops_transfers_desc": "List and manage all transfers.",
+  "mobile_admin_ops_users_desc": "View system users.",
+  "mobile_admin_ops_agents_desc": "List and manage agents.",
+  "mobile_admin_ops_distributors_desc": "List and manage distributors."
 }

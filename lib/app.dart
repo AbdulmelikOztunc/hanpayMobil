@@ -21,7 +21,7 @@ class HanpayApp extends ConsumerWidget {
       title: 'HANPAY',
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       routerConfig: router,
       locale: locale.materialLocale,
       supportedLocales: AppLocale.values.map((l) => l.materialLocale),

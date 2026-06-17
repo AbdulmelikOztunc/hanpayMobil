@@ -1366,5 +1366,12 @@
   "cashbox_commission_section_hint": "Acenteden alınan transfer komisyonları. Merkez kasa bakiyesini etkilemez; yalnızca raporlama amaçlıdır.",
   "cashbox_commission_row_hint": "Bakiye dışı — raporlama",
   "cashbox_total_commission_info": "Komisyon (bakiye dışı)",
-  "cashbox_no_commissions": "Henüz komisyon hareketi yok."
+  "cashbox_no_commissions": "Henüz komisyon hareketi yok.",
+  "mobile_coming_soon_body": "Bu ekran bir sonraki adımda eklenecek.",
+  "mobile_admin_ops_intro": "Sık kullanılan yönetici işlemlerine hızlı erişim.",
+  "mobile_admin_ops_requests_desc": "Onay bekleyen talepleri görüntüle ve yönet.",
+  "mobile_admin_ops_transfers_desc": "Tüm transferleri listele ve yönet.",
+  "mobile_admin_ops_users_desc": "Sistem kullanıcılarını görüntüle.",
+  "mobile_admin_ops_agents_desc": "Acenteleri listele ve yönet.",
+  "mobile_admin_ops_distributors_desc": "Dağıtıcıları listele ve yönet."
 }

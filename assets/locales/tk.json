@@ -1327,5 +1327,12 @@
   "cashbox_commission_section_hint": "Geçiriş döredilende agentden alnan komissiýa. Merkez kassa balansyna täsir etmeýär; diňe hasabat üçin.",
   "cashbox_commission_row_hint": "Balansda däl — hasabat",
   "cashbox_total_commission_info": "Komissiýa (balansda däl)",
-  "cashbox_no_commissions": "Heniz komissiýa hereketi ýok."
+  "cashbox_no_commissions": "Heniz komissiýa hereketi ýok.",
+  "mobile_coming_soon_body": "Bu ekran indiki ädimde goşular.",
+  "mobile_admin_ops_intro": "Adatça ulanylýan admin işlemlerine çalt giriş.",
+  "mobile_admin_ops_requests_desc": "Garaşylýan haýyşlary görüň we dolandyryň.",
+  "mobile_admin_ops_transfers_desc": "Ähli geçirişleri sanawlaň we dolandyryň.",
+  "mobile_admin_ops_users_desc": "Ulgam ulanyjylaryny görüň.",
+  "mobile_admin_ops_agents_desc": "Agentleri sanawlaň we dolandyryň.",
+  "mobile_admin_ops_distributors_desc": "Distribýutorlary sanawlaň we dolandyryň."
 }

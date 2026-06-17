@@ -1,8 +1,29 @@
 abstract final class Env {
-  static const apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'https://api.hanpay.com.tr/api',
-  );
+  /// `dev` → Somee test sunucusu, `prod` → canlı API, `local` → yerel backend.
+  static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'dev');
+
+  static const _someeApiUrl = 'https://turkmenpay.somee.com/api';
+  static const _prodApiUrl = 'https://api.hanpay.com.tr/api';
+  static const _localApiUrl = 'http://10.0.2.2:5000/api';
+
+  static String get apiBaseUrl {
+    const override = String.fromEnvironment('API_BASE_URL');
+    if (override.isNotEmpty) return override;
+    return switch (appEnv) {
+      'prod' => _prodApiUrl,
+      'local' => _localApiUrl,
+      _ => _someeApiUrl,
+    };
+  }
+
+  static bool get isDev => appEnv != 'prod';
+  static bool get isProd => appEnv == 'prod';
+
+  static String get environmentLabel => switch (appEnv) {
+        'prod' => 'Production',
+        'local' => 'Local',
+        _ => 'Somee Test',
+      };
 
   static String get hubOrigin {
     final uri = Uri.parse(apiBaseUrl);

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/core/i18n/app_locale.dart';
+import 'package:hanpay_mobil/core/i18n/translator_ext.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
 import 'package:hanpay_mobil/features/auth/presentation/auth_controller.dart';
 import 'package:hanpay_mobil/shared/models/role.dart';
@@ -150,6 +152,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton.icon(
+          onPressed: () async {
+            await ref.read(authControllerProvider.notifier).logout();
+            if (context.mounted) context.go('/login');
+          },
+          icon: const Icon(Icons.logout),
+          label: Text(ref.tw('layout_log_out')),
         ),
       ],
     );

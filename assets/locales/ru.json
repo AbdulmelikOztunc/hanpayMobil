@@ -1326,5 +1326,12 @@
   "cashbox_commission_section_hint": "Комиссия, взимаемая с агентов при переводах. Не влияет на баланс центральной кассы; только для отчётности.",
   "cashbox_commission_row_hint": "Вне баланса — только отчёт",
   "cashbox_total_commission_info": "Комиссия (вне баланса)",
-  "cashbox_no_commissions": "Движений по комиссии пока нет."
+  "cashbox_no_commissions": "Движений по комиссии пока нет.",
+  "mobile_coming_soon_body": "Этот экран будет добавлен на следующем шаге.",
+  "mobile_admin_ops_intro": "Быстрый доступ к частым операциям администратора.",
+  "mobile_admin_ops_requests_desc": "Просмотр и управление ожидающими запросами.",
+  "mobile_admin_ops_transfers_desc": "Список и управление всеми переводами.",
+  "mobile_admin_ops_users_desc": "Просмотр пользователей системы.",
+  "mobile_admin_ops_agents_desc": "Список и управление агентами.",
+  "mobile_admin_ops_distributors_desc": "Список и управление дистрибьюторами."
 }
