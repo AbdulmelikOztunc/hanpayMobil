@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hanpay_mobil/core/network/api_exception.dart';
 import 'package:hanpay_mobil/features/auth/presentation/auth_controller.dart';
 import 'package:hanpay_mobil/features/insights/data/insights_repository.dart';
 import 'package:hanpay_mobil/shared/models/insights_models.dart';
@@ -7,6 +10,8 @@ import 'package:hanpay_mobil/shared/models/role.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 import 'package:hanpay_mobil/shared/widgets/stat_card.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 class InsightsScope {
   const InsightsScope({this.agentId, this.distributorId});
@@ -345,6 +350,33 @@ class TransferReportScreen extends ConsumerStatefulWidget {
 
 class _TransferReportScreenState extends ConsumerState<TransferReportScreen> {
   String period = 'thisMonth';
+  var _exporting = false;
+
+  Future<void> _exportExcel(InsightsScope scope) async {
+    setState(() => _exporting = true);
+    try {
+      final export = await ref.read(insightsRepositoryProvider).downloadTransferReportExcel(
+            period: period,
+            agentId: scope.agentId,
+            distributorId: scope.distributorId,
+            take: 200,
+          );
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/${export.filename}');
+      await file.writeAsBytes(export.bytes);
+      await Share.shareXFiles([XFile(file.path)], text: 'Transfer raporu');
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -356,13 +388,27 @@ class _TransferReportScreenState extends ConsumerState<TransferReportScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'today', label: Text('Bugün')),
-              ButtonSegment(value: 'thisMonth', label: Text('Bu ay')),
+          child: Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'today', label: Text('Bugün')),
+                    ButtonSegment(value: 'thisMonth', label: Text('Bu ay')),
+                  ],
+                  selected: {period},
+                  onSelectionChanged: (v) => setState(() => period = v.first),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Excel indir',
+                onPressed: _exporting ? null : () => _exportExcel(scope),
+                icon: _exporting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.download),
+              ),
             ],
-            selected: {period},
-            onSelectionChanged: (v) => setState(() => period = v.first),
           ),
         ),
         Expanded(

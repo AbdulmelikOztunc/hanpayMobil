@@ -89,6 +89,37 @@ class AuthRepository {
     }
   }
 
+  Future<AuthSession> register({
+    required String email,
+    required String password,
+    required String fullName,
+    required String role,
+    String? phone,
+    String? phoneCountry,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/register',
+        data: {
+          'email': email,
+          'password': password,
+          'fullName': fullName,
+          'role': role,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
+          if (phoneCountry != null && phoneCountry.isNotEmpty) 'phoneCountry': phoneCountry,
+        },
+      );
+      final session = AuthSession.fromApiResponse(response.data ?? {});
+      if (session.token.isEmpty) {
+        throw ApiException('Kayıt yanıtında token bulunamadı.');
+      }
+      await _storage.saveSession(session.encode());
+      return session;
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<void> logoutRemote() async {
     try {
       await _dio.post<void>('/auth/logout');

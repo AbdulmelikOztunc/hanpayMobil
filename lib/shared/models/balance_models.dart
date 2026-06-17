@@ -136,10 +136,10 @@ class DistributorPrimRow {
   factory DistributorPrimRow.fromJson(Map<String, dynamic> json) => DistributorPrimRow(
         id: jsonInt(json['id']),
         transferNumber: jsonStr(json['transferNumber']),
-        earnedAt: jsonDate(json['earnedAt']),
-        transferAmount: jsonDouble(json['transferAmount']),
-        primAmount: jsonDouble(json['primAmount']),
-        isReversed: json['isReversed'] == true,
+        earnedAt: jsonDate(json['earnedAt'] ?? json['paidAt'] ?? json['date'] ?? json['createdAt']),
+        transferAmount: jsonDouble(json['transferAmount'] ?? json['amount']),
+        primAmount: jsonDouble(json['primAmount'] ?? json['primUsd'] ?? json['earnedPrimUsd']),
+        isReversed: json['isReversed'] == true || json['reversed'] == true,
         distributorName: json['distributorName'] as String?,
       );
 }

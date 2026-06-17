@@ -209,3 +209,10 @@ class TransferReportRow {
         totalTl: jsonDouble(json['totalTl'] ?? json['TotalTl']),
       );
 }
+
+class TransferReportExport {
+  const TransferReportExport({required this.bytes, required this.filename});
+
+  final List<int> bytes;
+  final String filename;
+}

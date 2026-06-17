@@ -6,6 +6,7 @@ import 'package:hanpay_mobil/features/agent/data/agent_repository.dart';
 import 'package:hanpay_mobil/features/admin/data/admin_repository.dart';
 import 'package:hanpay_mobil/features/transfers/presentation/agent_transfer_detail_screen.dart';
 import 'package:hanpay_mobil/shared/models/admin_models.dart';
+import 'package:hanpay_mobil/shared/models/balance_models.dart';
 import 'package:hanpay_mobil/shared/models/state_model.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 import 'package:hanpay_mobil/shared/widgets/stat_card.dart';
@@ -196,48 +197,161 @@ class _RequestCardState extends ConsumerState<_RequestCard> {
   }
 }
 
-final adminTransfersProvider = FutureProvider.autoDispose((ref) {
-  return ref.watch(adminRepositoryProvider).getTransfers(take: 100);
-});
+final adminTransfersProvider = FutureProvider.autoDispose
+    .family<List<AdminTransferRow>, ({String? search, String? status, String? fromUtc, String? toUtc})>(
+  (ref, filters) {
+    return ref.watch(adminRepositoryProvider).getTransfers(
+          search: filters.search,
+          status: filters.status,
+          fromUtc: filters.fromUtc,
+          toUtc: filters.toUtc,
+          take: 100,
+        );
+  },
+);
 
-class AdminTransfersScreen extends ConsumerWidget {
+class AdminTransfersScreen extends ConsumerStatefulWidget {
   const AdminTransfersScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminTransfersProvider);
+  ConsumerState<AdminTransfersScreen> createState() => _AdminTransfersScreenState();
+}
+
+class _AdminTransfersScreenState extends ConsumerState<AdminTransfersScreen> {
+  final _searchCtrl = TextEditingController();
+  String? _status;
+  DateTime? _fromDate;
+  DateTime? _toDate;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  ({String? search, String? status, String? fromUtc, String? toUtc}) get _filters => (
+        search: _searchCtrl.text.trim().isEmpty ? null : _searchCtrl.text.trim(),
+        status: _status,
+        fromUtc: _fromDate?.toUtc().toIso8601String(),
+        toUtc: _toDate?.toUtc().toIso8601String(),
+      );
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDateRange: _fromDate != null && _toDate != null
+          ? DateTimeRange(start: _fromDate!, end: _toDate!)
+          : null,
+    );
+    if (range != null) {
+      setState(() {
+        _fromDate = range.start;
+        _toDate = range.end;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filters = _filters;
+    final async = ref.watch(adminTransfersProvider(filters));
     final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
-    return async.when(
-      loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminTransfersProvider)),
-      data: (rows) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(adminTransfersProvider),
-        child: rows.isEmpty
-            ? ListView(children: const [SizedBox(height: 120), Center(child: Text('Transfer yok.'))])
-            : ListView.separated(
-                padding: const EdgeInsets.all(12),
-                itemCount: rows.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final r = rows[index];
-                  return Card(
-                    child: ListTile(
-                      title: Text('#${r.transferNumber}'),
-                      subtitle: Text(
-                        '${r.agentName ?? '-'} · ${r.receiverFullName ?? '-'}\n${dateFmt.format(r.createdAt.toLocal())}',
-                      ),
-                      isThreeLine: true,
-                      trailing: Text(formatUsd(r.amount)),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AgentTransferDetailScreen(id: r.id),
-                        ),
-                      ),
-                    ),
-                  );
-                },
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: Column(
+            children: [
+              TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Ara',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.search),
+                    onPressed: () => setState(() {}),
+                  ),
+                ),
+                onSubmitted: (_) => setState(() {}),
               ),
-      ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String?>(
+                      value: _status,
+                      decoration: const InputDecoration(labelText: 'Durum'),
+                      items: const [
+                        DropdownMenuItem(value: null, child: Text('Tümü')),
+                        DropdownMenuItem(value: 'Pending', child: Text('Bekliyor')),
+                        DropdownMenuItem(value: 'Paid', child: Text('Ödendi')),
+                        DropdownMenuItem(value: 'Cancelled', child: Text('İptal')),
+                        DropdownMenuItem(value: 'InProgress', child: Text('Devam ediyor')),
+                      ],
+                      onChanged: (v) => setState(() => _status = v),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Tarih aralığı',
+                    onPressed: _pickDateRange,
+                    icon: const Icon(Icons.date_range),
+                  ),
+                ],
+              ),
+              if (_fromDate != null && _toDate != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () => setState(() {
+                      _fromDate = null;
+                      _toDate = null;
+                    }),
+                    child: Text(
+                      '${DateFormat('dd.MM.yyyy').format(_fromDate!)} - ${DateFormat('dd.MM.yyyy').format(_toDate!)} (temizle)',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: async.when(
+            loading: () => const LoadingView(),
+            error: (e, _) =>
+                ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminTransfersProvider(filters))),
+            data: (rows) => RefreshIndicator(
+              onRefresh: () async => ref.invalidate(adminTransfersProvider(filters)),
+              child: rows.isEmpty
+                  ? ListView(children: const [SizedBox(height: 120), Center(child: Text('Transfer yok.'))])
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: rows.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final r = rows[index];
+                        return Card(
+                          child: ListTile(
+                            title: Text('#${r.transferNumber}'),
+                            subtitle: Text(
+                              '${r.agentName ?? '-'} · ${r.receiverFullName ?? '-'}\n${dateFmt.format(r.createdAt.toLocal())}',
+                            ),
+                            isThreeLine: true,
+                            trailing: Text(formatUsd(r.amount)),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AgentTransferDetailScreen(id: r.id),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -282,9 +396,31 @@ final adminAgentDetailProvider = FutureProvider.autoDispose.family<AdminAgentDto
   return ref.watch(adminRepositoryProvider).getAgent(id);
 });
 
+final adminAgentSummaryProvider = FutureProvider.autoDispose.family<AgentDetailStatistics?, int>((ref, id) {
+  return ref.watch(adminRepositoryProvider).getAgentSummary(id);
+});
+
+final adminAgentTransactionsProvider =
+    FutureProvider.autoDispose.family<List<AgentTransactionRow>, int>((ref, id) {
+  return ref.watch(adminRepositoryProvider).getAgentTransactions(id);
+});
+
 class AdminAgentDetailScreen extends ConsumerWidget {
   const AdminAgentDetailScreen({super.key, required this.id});
   final int id;
+
+  Future<void> _reactivate(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(adminRepositoryProvider).reactivateAgent(id);
+      ref.invalidate(adminAgentDetailProvider(id));
+      ref.invalidate(adminAgentsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Acente yeniden aktifleştirildi.')));
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
 
   Future<void> _adjustBalance(BuildContext context, WidgetRef ref, {required bool credit}) async {
     final amountCtrl = TextEditingController();
@@ -331,6 +467,9 @@ class AdminAgentDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminAgentDetailProvider(id));
+    final summaryAsync = ref.watch(adminAgentSummaryProvider(id));
+    final txAsync = ref.watch(adminAgentTransactionsProvider(id));
+    final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
     return Scaffold(
       appBar: AppBar(title: const Text('Acente detayı')),
       body: async.when(
@@ -358,6 +497,35 @@ class AdminAgentDetailScreen extends ConsumerWidget {
                 StatCard(label: 'Durum', value: a.isActive ? 'Aktif' : 'Pasif', icon: Icons.info_outline),
               ],
             ),
+            summaryAsync.when(
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (stats) {
+                if (stats == null) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 16),
+                    Text('İstatistikler', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 1.5,
+                      children: [
+                        StatCard(label: 'Toplam transfer', value: '${stats.totalTransfers}', icon: Icons.swap_horiz),
+                        StatCard(label: 'Toplam tutar', value: formatUsd(stats.totalAmount), icon: Icons.payments),
+                        StatCard(label: 'Ödenen', value: '${stats.paidCount}', icon: Icons.check_circle_outline),
+                        StatCard(label: 'Başarı oranı', value: '${stats.successRate.toStringAsFixed(1)}%', icon: Icons.trending_up),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -375,6 +543,36 @@ class AdminAgentDetailScreen extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+            if (!a.isActive) ...[
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: () => _reactivate(context, ref),
+                child: const Text('Yeniden aktifleştir'),
+              ),
+            ],
+            const SizedBox(height: 24),
+            Text('Bakiye hareketleri', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            txAsync.when(
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
+              error: (e, _) => Text('Hareketler yüklenemedi: $e'),
+              data: (items) => items.isEmpty
+                  ? const Text('Kayıt yok.')
+                  : Column(
+                      children: items
+                          .map(
+                            (t) => Card(
+                              child: ListTile(
+                                title: Text(formatUsd(t.amount)),
+                                subtitle: Text('${t.transactionType}\n${t.description}\n${dateFmt.format(t.date.toLocal())}'),
+                                isThreeLine: true,
+                                trailing: Text(formatUsd(t.balanceAfter), style: const TextStyle(fontSize: 12)),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
             ),
           ],
         ),
@@ -424,9 +622,44 @@ final adminDistributorDetailProvider =
   return ref.watch(adminRepositoryProvider).getDistributor(id);
 });
 
+final adminDistributorBalanceHistoryProvider =
+    FutureProvider.autoDispose.family<List<AgentTransactionRow>, int>((ref, id) {
+  return ref.watch(adminRepositoryProvider).getDistributorBalanceHistory(id);
+});
+
+final adminDistributorEarnedPrimsProvider =
+    FutureProvider.autoDispose.family<List<DistributorPrimRow>?, int>((ref, id) {
+  return ref.watch(adminRepositoryProvider).getDistributorEarnedPrims(id);
+});
+
 class AdminDistributorDetailScreen extends ConsumerWidget {
   const AdminDistributorDetailScreen({super.key, required this.id});
   final int id;
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Dağıtıcıyı sil'),
+        content: const Text('Bu dağıtıcıyı silmek istediğinize emin misiniz?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sil')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(adminRepositoryProvider).deleteDistributor(id);
+      ref.invalidate(adminDistributorsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dağıtıcı silindi.')));
+        context.pop();
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
 
   Future<void> _adjustBalance(BuildContext context, WidgetRef ref, {required bool credit}) async {
     final amountCtrl = TextEditingController();
@@ -473,8 +706,20 @@ class AdminDistributorDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminDistributorDetailProvider(id));
+    final historyAsync = ref.watch(adminDistributorBalanceHistoryProvider(id));
+    final primsAsync = ref.watch(adminDistributorEarnedPrimsProvider(id));
+    final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
     return Scaffold(
-      appBar: AppBar(title: const Text('Dağıtıcı detayı')),
+      appBar: AppBar(
+        title: const Text('Dağıtıcı detayı'),
+        actions: [
+          IconButton(
+            tooltip: 'Sil',
+            onPressed: () => _delete(context, ref),
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ],
+      ),
       body: async.when(
         loading: () => const LoadingView(),
         error: (e, _) =>
@@ -513,6 +758,59 @@ class AdminDistributorDetailScreen extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 24),
+            Text('Bakiye hareketleri', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            historyAsync.when(
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
+              error: (e, _) => Text('Hareketler yüklenemedi: $e'),
+              data: (items) => items.isEmpty
+                  ? const Text('Kayıt yok.')
+                  : Column(
+                      children: items
+                          .map(
+                            (t) => Card(
+                              child: ListTile(
+                                title: Text(formatUsd(t.amount)),
+                                subtitle: Text('${t.transactionType}\n${t.description}\n${dateFmt.format(t.date.toLocal())}'),
+                                isThreeLine: true,
+                                trailing: Text(formatUsd(t.balanceAfter), style: const TextStyle(fontSize: 12)),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+            ),
+            const SizedBox(height: 24),
+            Text('Kazanılan primler', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            primsAsync.when(
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
+              error: (e, _) => Text('Primler yüklenemedi: $e'),
+              data: (items) {
+                if (items == null || items.isEmpty) return const Text('Prim kaydı yok.');
+                return Column(
+                  children: items
+                      .map(
+                        (p) => Card(
+                          child: ListTile(
+                            title: Text(p.transferNumber),
+                            subtitle: Text(dateFmt.format(p.earnedAt.toLocal())),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(formatUsd(p.primAmount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                                if (p.isReversed) const Text('İade', style: TextStyle(fontSize: 11, color: Colors.orange)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
             ),
           ],
         ),
@@ -667,6 +965,39 @@ class _AdminStatesScreenState extends ConsumerState<AdminStatesScreen> {
     }
   }
 
+  Future<void> _editState(StateDto state) async {
+    final nameCtrl = TextEditingController(text: state.name);
+    final codeCtrl = TextEditingController(text: state.code);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eyalet düzenle'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Ad')),
+            TextField(controller: codeCtrl, decoration: const InputDecoration(labelText: 'Kod')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Kaydet')),
+        ],
+      ),
+    );
+    final name = nameCtrl.text.trim();
+    final code = codeCtrl.text.trim();
+    nameCtrl.dispose();
+    codeCtrl.dispose();
+    if (ok != true) return;
+    try {
+      await ref.read(adminRepositoryProvider).updateState(state.id, name: name, code: code);
+      ref.invalidate(adminStatesProvider);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(adminStatesProvider);
@@ -687,6 +1018,7 @@ class _AdminStatesScreenState extends ConsumerState<AdminStatesScreen> {
                 child: ListTile(
                   title: Text(s.name),
                   subtitle: Text(s.code),
+                  onTap: () => _editState(s),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () async {
@@ -777,8 +1109,19 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
   }
 }
 
-final adminRolesProvider = FutureProvider.autoDispose((ref) {
-  return ref.watch(adminRepositoryProvider).getRoles();
+final adminRolesProvider = FutureProvider.autoDispose((ref) async {
+  final repo = ref.watch(adminRepositoryProvider);
+  final roles = await repo.getRoles();
+  final matrix = await repo.getPermissionsMatrix();
+  return roles
+      .map(
+        (r) => RoleDto(
+          id: r.id,
+          name: r.name,
+          permissions: matrix[r.name]?.isNotEmpty == true ? matrix[r.name]! : r.permissions,
+        ),
+      )
+      .toList();
 });
 
 class AdminRolesScreen extends ConsumerStatefulWidget {
@@ -870,12 +1213,46 @@ class _AdminRolesScreenState extends ConsumerState<AdminRolesScreen> {
   }
 }
 
-final adminCashboxProvider = FutureProvider.autoDispose((ref) {
-  return ref.watch(adminRepositoryProvider).getCashboxes();
+final adminCashboxProvider = FutureProvider.autoDispose
+    .family<CashboxesSummary, ({String? fromUtc, String? toUtc})>((ref, filters) {
+  return ref.watch(adminRepositoryProvider).getCashboxes(
+        fromUtc: filters.fromUtc,
+        toUtc: filters.toUtc,
+      );
 });
 
-class AdminCashboxScreen extends ConsumerWidget {
+class AdminCashboxScreen extends ConsumerStatefulWidget {
   const AdminCashboxScreen({super.key});
+
+  @override
+  ConsumerState<AdminCashboxScreen> createState() => _AdminCashboxScreenState();
+}
+
+class _AdminCashboxScreenState extends ConsumerState<AdminCashboxScreen> {
+  DateTime? _fromDate;
+  DateTime? _toDate;
+
+  ({String? fromUtc, String? toUtc}) get _filters => (
+        fromUtc: _fromDate?.toUtc().toIso8601String(),
+        toUtc: _toDate?.toUtc().toIso8601String(),
+      );
+
+  Future<void> _pickDateRange() async {
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _fromDate != null && _toDate != null
+          ? DateTimeRange(start: _fromDate!, end: _toDate!)
+          : null,
+    );
+    if (range != null) {
+      setState(() {
+        _fromDate = range.start;
+        _toDate = range.end;
+      });
+    }
+  }
 
   Future<void> _manualMovement(BuildContext context, WidgetRef ref, UserCashboxRow user) async {
     final amountCtrl = TextEditingController();
@@ -925,21 +1302,46 @@ class AdminCashboxScreen extends ConsumerWidget {
             description: description,
             direction: direction,
           );
-      ref.invalidate(adminCashboxProvider);
+      ref.invalidate(adminCashboxProvider(_filters));
     } on ApiException catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminCashboxProvider);
+  Widget build(BuildContext context) {
+    final filters = _filters;
+    final async = ref.watch(adminCashboxProvider(filters));
     return async.when(
       loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminCashboxProvider)),
+      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminCashboxProvider(filters))),
       data: (data) => ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _pickDateRange,
+                  icon: const Icon(Icons.date_range),
+                  label: Text(
+                    _fromDate != null && _toDate != null
+                        ? '${DateFormat('dd.MM.yyyy').format(_fromDate!)} - ${DateFormat('dd.MM.yyyy').format(_toDate!)}'
+                        : 'Tarih aralığı seç',
+                  ),
+                ),
+              ),
+              if (_fromDate != null)
+                IconButton(
+                  onPressed: () => setState(() {
+                    _fromDate = null;
+                    _toDate = null;
+                  }),
+                  icon: const Icon(Icons.clear),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,

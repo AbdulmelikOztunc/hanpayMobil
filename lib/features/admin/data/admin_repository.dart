@@ -66,12 +66,21 @@ class AdminRepository {
     }
   }
 
-  Future<List<AdminTransferRow>> getTransfers({String? search, int? take}) async {
+  Future<List<AdminTransferRow>> getTransfers({
+    String? search,
+    String? status,
+    String? fromUtc,
+    String? toUtc,
+    int? take,
+  }) async {
     try {
       final response = await _dio.get<List<dynamic>>(
         '/admin/transfers',
         queryParameters: {
           if (search != null && search.isNotEmpty) 'search': search,
+          if (status != null && status.isNotEmpty) 'status': status,
+          if (fromUtc != null) 'fromUtc': fromUtc,
+          if (toUtc != null) 'toUtc': toUtc,
           if (take != null) 'take': take,
         },
       );
@@ -160,6 +169,27 @@ class AdminRepository {
     }
   }
 
+  Future<StateDto> getStateById(int id) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/states/$id');
+      return StateDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<StateDto> updateState(int id, {required String name, required String code}) async {
+    try {
+      final response = await _dio.put<Map<String, dynamic>>('/states/$id', data: {
+        'name': name,
+        'code': code,
+      });
+      return StateDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<void> deleteState(int id) async {
     try {
       await _dio.delete<void>('/states/$id');
@@ -223,9 +253,15 @@ class AdminRepository {
     }
   }
 
-  Future<CashboxesSummary> getCashboxes() async {
+  Future<CashboxesSummary> getCashboxes({String? fromUtc, String? toUtc}) async {
     try {
-      final response = await _dio.get<Map<String, dynamic>>('/cashboxes');
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/cashboxes',
+        queryParameters: {
+          if (fromUtc != null) 'fromUtc': fromUtc,
+          if (toUtc != null) 'toUtc': toUtc,
+        },
+      );
       return CashboxesSummary.fromJson(response.data ?? {});
     } on DioException catch (e) {
       throw mapDioException(e);
@@ -321,6 +357,36 @@ class AdminRepository {
     }
   }
 
+  Future<void> reactivateAgent(int id) async {
+    try {
+      await _dio.post<void>('/agents/$id/reactivate');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AgentDetailStatistics?> getAgentSummary(int agentId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/agents/$agentId/summary');
+      final data = response.data;
+      if (data == null || data.isEmpty) return null;
+      return AgentDetailStatistics.fromJson(data);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<AgentTransactionRow>> getAgentTransactions(int agentId) async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/agents/$agentId/transactions');
+      return (response.data ?? [])
+          .map((e) => AgentTransactionRow.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<AdminDistributorDto> createDistributor(Map<String, dynamic> body) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>('/distributors', data: body);
@@ -335,6 +401,37 @@ class AdminRepository {
       final response = await _dio.put<Map<String, dynamic>>('/distributors/$id', data: body);
       return AdminDistributorDto.fromJson(response.data ?? {});
     } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> deleteDistributor(int id) async {
+    try {
+      await _dio.delete<void>('/distributors/$id');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<AgentTransactionRow>> getDistributorBalanceHistory(int id) async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/distributors/$id/balance/history');
+      return (response.data ?? [])
+          .map((e) => AgentTransactionRow.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<DistributorPrimRow>?> getDistributorEarnedPrims(int distributorId) async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/distributors/$distributorId/prims');
+      return (response.data ?? [])
+          .map((e) => DistributorPrimRow.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
       throw mapDioException(e);
     }
   }
@@ -423,6 +520,21 @@ class AdminRepository {
     try {
       final response = await _dio.get<List<dynamic>>('/permissions');
       return (response.data ?? []).map((e) => e.toString()).toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<PermissionsMatrix> getPermissionsMatrix() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/roles/permissions-matrix');
+      final data = response.data ?? {};
+      return data.map(
+        (key, value) => MapEntry(
+          key,
+          (value as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
+        ),
+      );
     } on DioException catch (e) {
       throw mapDioException(e);
     }

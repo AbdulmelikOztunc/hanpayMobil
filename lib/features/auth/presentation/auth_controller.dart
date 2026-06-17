@@ -64,6 +64,26 @@ class AuthController extends Notifier<AuthState> {
     state = AuthState(session: session, isBootstrapping: false);
   }
 
+  Future<void> register({
+    required String email,
+    required String password,
+    required String fullName,
+    required String role,
+    String? phone,
+    String? phoneCountry,
+  }) async {
+    final session = await _repo.register(
+      email: email,
+      password: password,
+      fullName: fullName,
+      role: role,
+      phone: phone,
+      phoneCountry: phoneCountry,
+    );
+    _syncToken(session);
+    state = AuthState(session: session, isBootstrapping: false);
+  }
+
   void applySession(AuthSession session) {
     _syncToken(session);
     state = AuthState(session: session, isBootstrapping: false);

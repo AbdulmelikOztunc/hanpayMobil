@@ -280,3 +280,106 @@ class ManualCashboxResult {
   final double centralBalance;
   final double userBalance;
 }
+
+class AgentDetailStatistics {
+  const AgentDetailStatistics({
+    required this.totalTransfers,
+    required this.totalAmount,
+    required this.paidCount,
+    required this.cancelledCount,
+    required this.pendingCount,
+    required this.onHoldCount,
+    required this.successRate,
+    required this.cancelRate,
+    required this.unsuccessfulRate,
+    required this.byState,
+  });
+
+  final int totalTransfers;
+  final double totalAmount;
+  final int paidCount;
+  final int cancelledCount;
+  final int pendingCount;
+  final int onHoldCount;
+  final double successRate;
+  final double cancelRate;
+  final double unsuccessfulRate;
+  final List<AgentStateStatRow> byState;
+
+  factory AgentDetailStatistics.fromJson(Map<String, dynamic> json) {
+    final paid = jsonInt(json['paidCount'] ?? json['PaidCount']);
+    final cancelled = jsonInt(json['cancelledCount'] ?? json['CancelledCount']);
+    final pending = jsonInt(json['pendingCount'] ?? json['PendingCount']);
+    final onHold = jsonInt(json['onHoldCount'] ?? json['OnHoldCount']);
+    var total = jsonInt(
+      json['totalTransfers'] ?? json['TotalTransfers'] ?? json['totalTransactions'] ?? json['TotalTransactions'],
+    );
+    if (total <= 0) total = paid + cancelled + pending + onHold;
+
+    final byStateRaw = json['byState'] ?? json['ByState'];
+    final byState = (byStateRaw is List ? byStateRaw : const [])
+        .whereType<Map>()
+        .map((e) => AgentStateStatRow.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.state.isNotEmpty)
+        .toList();
+
+    return AgentDetailStatistics(
+      totalTransfers: total,
+      totalAmount: jsonDouble(json['totalAmount'] ?? json['TotalAmount']),
+      paidCount: paid,
+      cancelledCount: cancelled,
+      pendingCount: pending,
+      onHoldCount: onHold,
+      successRate: total > 0 ? (paid / total) * 100 : 0,
+      cancelRate: total > 0 ? (cancelled / total) * 100 : 0,
+      unsuccessfulRate: total > 0 ? ((cancelled + onHold) / total) * 100 : 0,
+      byState: byState,
+    );
+  }
+}
+
+class AgentStateStatRow {
+  const AgentStateStatRow({required this.state, required this.transfers, required this.volume});
+
+  final String state;
+  final int transfers;
+  final double volume;
+
+  factory AgentStateStatRow.fromJson(Map<String, dynamic> json) => AgentStateStatRow(
+        state: jsonStr(json['state'] ?? json['State'] ?? json['stateCode'] ?? json['StateCode']),
+        transfers: jsonInt(json['transfers'] ?? json['Transfers'] ?? json['transferCount'] ?? json['TransferCount']),
+        volume: jsonDouble(json['volume'] ?? json['Volume'] ?? json['amount'] ?? json['Amount']),
+      );
+}
+
+class AgentTransactionRow {
+  const AgentTransactionRow({
+    required this.id,
+    required this.date,
+    required this.amount,
+    required this.transactionType,
+    required this.description,
+    required this.performedByName,
+    required this.balanceAfter,
+  });
+
+  final int id;
+  final DateTime date;
+  final double amount;
+  final String transactionType;
+  final String description;
+  final String performedByName;
+  final double balanceAfter;
+
+  factory AgentTransactionRow.fromJson(Map<String, dynamic> json) => AgentTransactionRow(
+        id: jsonInt(json['id']),
+        date: jsonDate(json['date'] ?? json['createdAt']),
+        amount: jsonDouble(json['amount']),
+        transactionType: jsonStr(json['transactionType'] ?? json['type']),
+        description: jsonStr(json['description']),
+        performedByName: jsonStr(json['performedByName']),
+        balanceAfter: jsonDouble(json['balanceAfter']),
+      );
+}
+
+typedef PermissionsMatrix = Map<String, List<String>>;

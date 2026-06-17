@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hanpay_mobil/core/i18n/app_locale.dart';
 import 'package:hanpay_mobil/core/router/app_router.dart';
 import 'package:hanpay_mobil/core/theme/app_theme.dart';
+import 'package:hanpay_mobil/core/network/notifications_hub.dart';
 import 'package:hanpay_mobil/features/auth/presentation/auth_controller.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 
@@ -39,7 +40,7 @@ class HanpayApp extends ConsumerWidget {
             child: ErrorView(message: 'Dil dosyaları yüklenemedi: ${localeAsync.error}'),
           );
         }
-        return child ?? const SizedBox.shrink();
+        return NotificationsHubListener(child: child ?? const SizedBox.shrink());
       },
     );
   }

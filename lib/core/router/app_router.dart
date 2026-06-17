@@ -78,7 +78,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: ':id/edit',
             builder: (_, state) => _shell(
               ref,
-              EditTransferScreen(id: int.parse(state.pathParameters['id']!)),
+              EditTransferScreen(transferId: int.parse(state.pathParameters['id']!)),
             ),
           ),
           GoRoute(
