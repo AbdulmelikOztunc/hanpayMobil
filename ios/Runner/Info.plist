@@ -4,6 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Dekont fotoğrafı çekmek için kamera erişimi gerekiyor.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Dekont seçmek için fotoğraf kütüphanesi erişimi gerekiyor.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Makbuzu galeriye kaydetmek için izin gerekiyor.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

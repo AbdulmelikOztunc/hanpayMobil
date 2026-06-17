@@ -1,3 +1,5 @@
+import com.android.build.gradle.LibraryExtension
+
 allprojects {
     repositories {
         google()
@@ -14,7 +16,15 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
+
+    // Plugins (file_picker etc.) may ship compileSdk 34; force 36 for lifecycle dependency.
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure<LibraryExtension>("android") {
+            compileSdk = 36
+        }
+    }
 }
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
