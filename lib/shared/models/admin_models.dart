@@ -11,6 +11,9 @@ class AdminRequestDto {
     this.transferNumber,
     this.reason,
     this.requestedByName,
+    this.transferState,
+    this.transferStateId,
+    this.netCommissionUsd,
   });
 
   final int id;
@@ -21,6 +24,12 @@ class AdminRequestDto {
   final String? transferNumber;
   final String? reason;
   final String? requestedByName;
+  final String? transferState;
+  final int? transferStateId;
+  final double? netCommissionUsd;
+
+  bool get isCancellationRequest =>
+      type.toLowerCase().contains('cancellation') || type.toLowerCase().contains('iptal');
 
   factory AdminRequestDto.fromJson(Map<String, dynamic> json) => AdminRequestDto(
         id: jsonInt(json['id']),
@@ -29,8 +38,16 @@ class AdminRequestDto {
         createdAt: jsonDate(json['createdAt']),
         transferId: (json['transferId'] as num?)?.toInt(),
         transferNumber: json['transferNumber'] as String?,
-        reason: json['reason'] as String? ?? json['cancellationReason'] as String?,
-        requestedByName: json['requestedByName'] as String? ?? json['requesterName'] as String?,
+        reason: json['reason'] as String? ??
+            json['cancellationReason'] as String? ??
+            json['description'] as String?,
+        requestedByName: json['requestedByName'] as String? ??
+            json['requesterName'] as String? ??
+            json['createdByUserName'] as String? ??
+            json['user'] as String?,
+        transferState: json['transferState'] as String?,
+        transferStateId: (json['transferStateId'] as num?)?.toInt(),
+        netCommissionUsd: (json['netCommissionUsd'] as num?)?.toDouble(),
       );
 }
 
@@ -211,4 +228,55 @@ class PrimPackageRow {
         isActive: json['isActive'] != false,
         distributorName: json['distributorName'] as String?,
       );
+}
+
+class PrimPackageBracket {
+  const PrimPackageBracket({
+    required this.minAmountUsd,
+    required this.maxAmountUsd,
+    required this.primUsdPerTransfer,
+    required this.sortOrder,
+  });
+
+  final double minAmountUsd;
+  final double maxAmountUsd;
+  final double primUsdPerTransfer;
+  final int sortOrder;
+
+  factory PrimPackageBracket.fromJson(Map<String, dynamic> json) => PrimPackageBracket(
+        minAmountUsd: jsonDouble(json['minAmountUsd']),
+        maxAmountUsd: jsonDouble(json['maxAmountUsd']),
+        primUsdPerTransfer: jsonDouble(json['primUsdPerTransfer']),
+        sortOrder: jsonInt(json['sortOrder']),
+      );
+}
+
+class PrimPackageDetail {
+  const PrimPackageDetail({
+    required this.id,
+    required this.name,
+    required this.isActive,
+    required this.brackets,
+  });
+
+  final int id;
+  final String name;
+  final bool isActive;
+  final List<PrimPackageBracket> brackets;
+
+  factory PrimPackageDetail.fromJson(Map<String, dynamic> json) => PrimPackageDetail(
+        id: jsonInt(json['id']),
+        name: jsonStr(json['name']),
+        isActive: json['isActive'] != false,
+        brackets: (json['brackets'] as List<dynamic>? ?? [])
+            .map((e) => PrimPackageBracket.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class ManualCashboxResult {
+  const ManualCashboxResult({required this.centralBalance, required this.userBalance});
+
+  final double centralBalance;
+  final double userBalance;
 }

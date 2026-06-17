@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
+import 'package:hanpay_mobil/features/agent/data/agent_repository.dart';
 import 'package:hanpay_mobil/features/admin/data/admin_repository.dart';
 import 'package:hanpay_mobil/features/transfers/presentation/agent_transfer_detail_screen.dart';
 import 'package:hanpay_mobil/shared/models/admin_models.dart';
+import 'package:hanpay_mobil/shared/models/state_model.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 import 'package:hanpay_mobil/shared/widgets/stat_card.dart';
 import 'package:intl/intl.dart';
@@ -30,17 +32,105 @@ class AdminRequestsScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(12),
                 itemCount: items.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) => _RequestCard(item: items[index], ref: ref),
+                itemBuilder: (context, index) => _RequestCard(item: items[index]),
               ),
       ),
     );
   }
 }
 
-class _RequestCard extends StatelessWidget {
-  const _RequestCard({required this.item, required this.ref});
+class _RequestCard extends ConsumerStatefulWidget {
+  const _RequestCard({required this.item});
   final AdminRequestDto item;
-  final WidgetRef ref;
+
+  @override
+  ConsumerState<_RequestCard> createState() => _RequestCardState();
+}
+
+class _RequestCardState extends ConsumerState<_RequestCard> {
+  AdminRequestDto get item => widget.item;
+
+  Future<void> _resolveCancellation() async {
+    final noteCtrl = TextEditingController();
+    var action = 'cancel';
+    var commissionMode = 1;
+    StateDto? targetState;
+    final states = await ref.read(adminRepositoryProvider).getStates();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('İptal talebini çöz'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'cancel', label: Text('İptal et')),
+                    ButtonSegment(value: 'reassign', label: Text('Yeniden ata')),
+                  ],
+                  selected: {action},
+                  onSelectionChanged: (v) => setDialogState(() => action = v.first),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: noteCtrl,
+                  decoration: const InputDecoration(labelText: 'Admin notu'),
+                  maxLines: 2,
+                ),
+                if (action == 'cancel' && (item.netCommissionUsd ?? 0) > 0) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<int>(
+                    value: commissionMode,
+                    decoration: const InputDecoration(labelText: 'Komisyon'),
+                    items: const [
+                      DropdownMenuItem(value: 1, child: Text('Acenteye iade')),
+                      DropdownMenuItem(value: 2, child: Text('Platformda bırak')),
+                    ],
+                    onChanged: (v) => setDialogState(() => commissionMode = v ?? 1),
+                  ),
+                ],
+                if (action == 'reassign' && states.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<StateDto>(
+                    value: targetState,
+                    decoration: const InputDecoration(labelText: 'Hedef eyalet'),
+                    items: states
+                        .where((s) => s.id != item.transferStateId)
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
+                        .toList(),
+                    onChanged: (v) => setDialogState(() => targetState = v),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Kaydet')),
+          ],
+        ),
+      ),
+    );
+    final note = noteCtrl.text.trim();
+    noteCtrl.dispose();
+    if (ok != true || note.isEmpty) return;
+
+    try {
+      await ref.read(adminRepositoryProvider).resolveTransferCancellationRequest(
+            item.id,
+            action: action,
+            adminNote: note,
+            commissionSettlement: action == 'cancel' ? commissionMode : null,
+            targetStateId: action == 'reassign' ? targetState?.id : null,
+          );
+      ref.invalidate(adminRequestsProvider);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,9 +142,18 @@ class _RequestCard extends StatelessWidget {
           children: [
             Text('${item.type} · ${item.status}', style: Theme.of(context).textTheme.titleMedium),
             if (item.transferNumber != null) Text('Havale: #${item.transferNumber}'),
+            if (item.transferState != null) Text('Eyalet: ${item.transferState}'),
             if (item.reason != null) Text(item.reason!),
             if (item.requestedByName != null) Text('Talep eden: ${item.requestedByName}'),
             const SizedBox(height: 8),
+            if (item.isCancellationRequest && item.status.toLowerCase() != 'approved')
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: FilledButton.tonal(
+                  onPressed: _resolveCancellation,
+                  child: const Text('İptal talebini çöz'),
+                ),
+              ),
             Row(
               children: [
                 Expanded(
@@ -187,6 +286,48 @@ class AdminAgentDetailScreen extends ConsumerWidget {
   const AdminAgentDetailScreen({super.key, required this.id});
   final int id;
 
+  Future<void> _adjustBalance(BuildContext context, WidgetRef ref, {required bool credit}) async {
+    final amountCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(credit ? 'Bakiye yükle' : 'Bakiye düş'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Tutar (USD)'),
+            ),
+            TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Açıklama')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Uygula')),
+        ],
+      ),
+    );
+    final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
+    final description = descCtrl.text.trim();
+    amountCtrl.dispose();
+    descCtrl.dispose();
+    if (ok != true || amount <= 0) return;
+    try {
+      if (credit) {
+        await ref.read(agentRepositoryProvider).creditAgentBalance(id, amount: amount, description: description);
+      } else {
+        await ref.read(agentRepositoryProvider).debitAgentBalance(id, amount: amount, description: description);
+      }
+      ref.invalidate(adminAgentDetailProvider(id));
+      ref.invalidate(adminAgentsProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminAgentDetailProvider(id));
@@ -215,6 +356,24 @@ class AdminAgentDetailScreen extends ConsumerWidget {
                 if (a.commissionRate != null)
                   StatCard(label: 'Komisyon', value: '${(a.commissionRate! * 100).toStringAsFixed(2)}%', icon: Icons.percent),
                 StatCard(label: 'Durum', value: a.isActive ? 'Aktif' : 'Pasif', icon: Icons.info_outline),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _adjustBalance(context, ref, credit: true),
+                    child: const Text('Bakiye yükle'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _adjustBalance(context, ref, credit: false),
+                    child: const Text('Bakiye düş'),
+                  ),
+                ),
               ],
             ),
           ],
@@ -269,6 +428,48 @@ class AdminDistributorDetailScreen extends ConsumerWidget {
   const AdminDistributorDetailScreen({super.key, required this.id});
   final int id;
 
+  Future<void> _adjustBalance(BuildContext context, WidgetRef ref, {required bool credit}) async {
+    final amountCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(credit ? 'Bakiye yükle' : 'Bakiye düş'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Tutar (USD)'),
+            ),
+            TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Açıklama')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Uygula')),
+        ],
+      ),
+    );
+    final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
+    final description = descCtrl.text.trim();
+    amountCtrl.dispose();
+    descCtrl.dispose();
+    if (ok != true || amount <= 0) return;
+    try {
+      if (credit) {
+        await ref.read(adminRepositoryProvider).creditDistributorBalance(id, amount: amount, description: description);
+      } else {
+        await ref.read(adminRepositoryProvider).debitDistributorBalance(id, amount: amount, description: description);
+      }
+      ref.invalidate(adminDistributorDetailProvider(id));
+      ref.invalidate(adminDistributorsProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminDistributorDetailProvider(id));
@@ -295,6 +496,24 @@ class AdminDistributorDetailScreen extends ConsumerWidget {
                 StatCard(label: 'Durum', value: d.isActive ? 'Aktif' : 'Pasif', icon: Icons.info_outline),
               ],
             ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _adjustBalance(context, ref, credit: true),
+                    child: const Text('Bakiye yükle'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _adjustBalance(context, ref, credit: false),
+                    child: const Text('Bakiye düş'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -309,29 +528,98 @@ final adminUsersProvider = FutureProvider.autoDispose((ref) {
 class AdminUsersScreen extends ConsumerWidget {
   const AdminUsersScreen({super.key});
 
+  Future<void> _createUser(BuildContext context, WidgetRef ref) async {
+    final emailCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    var role = 'AgentUser';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Kullanıcı oluştur'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'E-posta')),
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Ad soyad')),
+                TextField(controller: passCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'Şifre')),
+                DropdownButtonFormField<String>(
+                  value: role,
+                  decoration: const InputDecoration(labelText: 'Rol'),
+                  items: const [
+                    DropdownMenuItem(value: 'AgentUser', child: Text('AgentUser')),
+                    DropdownMenuItem(value: 'AgentManager', child: Text('AgentManager')),
+                    DropdownMenuItem(value: 'DistributorUser', child: Text('DistributorUser')),
+                    DropdownMenuItem(value: 'DistributorManager', child: Text('DistributorManager')),
+                    DropdownMenuItem(value: 'AssistantAdmin', child: Text('AssistantAdmin')),
+                    DropdownMenuItem(value: 'Admin', child: Text('Admin')),
+                  ],
+                  onChanged: (v) => setState(() => role = v ?? role),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Oluştur')),
+          ],
+        ),
+      ),
+    );
+    final email = emailCtrl.text.trim();
+    final fullName = nameCtrl.text.trim();
+    final password = passCtrl.text;
+    emailCtrl.dispose();
+    nameCtrl.dispose();
+    passCtrl.dispose();
+    if (ok != true || email.isEmpty || password.length < 6) return;
+    try {
+      await ref.read(adminRepositoryProvider).createUser({
+        'email': email,
+        'fullName': fullName,
+        'password': password,
+        'role': role,
+      });
+      ref.invalidate(adminUsersProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminUsersProvider);
-    return async.when(
-      loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminUsersProvider)),
-      data: (users) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(adminUsersProvider),
-        child: ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: users.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final u = users[index];
-            return Card(
-              child: ListTile(
-                title: Text(u.fullName),
-                subtitle: Text('${u.email}\n${u.role}'),
-                isThreeLine: true,
-                trailing: Icon(u.isActive ? Icons.check_circle : Icons.block, color: u.isActive ? Colors.green : Colors.grey),
-              ),
-            );
-          },
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _createUser(context, ref),
+        child: const Icon(Icons.person_add),
+      ),
+      body: async.when(
+        loading: () => const LoadingView(),
+        error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminUsersProvider)),
+        data: (users) => RefreshIndicator(
+          onRefresh: () async => ref.invalidate(adminUsersProvider),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: users.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final u = users[index];
+              return Card(
+                child: ListTile(
+                  title: Text(u.fullName),
+                  subtitle: Text('${u.email}\n${u.role}'),
+                  isThreeLine: true,
+                  trailing: Icon(
+                    u.isActive ? Icons.check_circle : Icons.block,
+                    color: u.isActive ? Colors.green : Colors.grey,
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -493,11 +781,16 @@ final adminRolesProvider = FutureProvider.autoDispose((ref) {
   return ref.watch(adminRepositoryProvider).getRoles();
 });
 
-class AdminRolesScreen extends ConsumerWidget {
+class AdminRolesScreen extends ConsumerStatefulWidget {
   const AdminRolesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminRolesScreen> createState() => _AdminRolesScreenState();
+}
+
+class _AdminRolesScreenState extends ConsumerState<AdminRolesScreen> {
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(adminRolesProvider);
     return async.when(
       loading: () => const LoadingView(),
@@ -512,7 +805,63 @@ class AdminRolesScreen extends ConsumerWidget {
             child: ExpansionTile(
               title: Text(r.name),
               subtitle: Text('${r.permissions.length} izin'),
-              children: r.permissions.map((p) => ListTile(title: Text(p))).toList(),
+              children: [
+                ...r.permissions.map((p) => ListTile(title: Text(p))),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      final catalog = await ref.read(adminRepositoryProvider).getPermissionsCatalog();
+                      final selected = {...r.permissions};
+                      final saved = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => StatefulBuilder(
+                          builder: (context, setDialogState) => AlertDialog(
+                            title: Text('${r.name} izinleri'),
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              height: 360,
+                              child: ListView(
+                                children: catalog
+                                    .map(
+                                      (p) => CheckboxListTile(
+                                        value: selected.contains(p),
+                                        title: Text(p, style: const TextStyle(fontSize: 13)),
+                                        onChanged: (v) => setDialogState(() {
+                                          if (v == true) {
+                                            selected.add(p);
+                                          } else {
+                                            selected.remove(p);
+                                          }
+                                        }),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+                              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Kaydet')),
+                            ],
+                          ),
+                        ),
+                      );
+                      if (saved != true) return;
+                      try {
+                        await ref
+                            .read(adminRepositoryProvider)
+                            .updateRolePermissions(r.id, selected.toList());
+                        ref.invalidate(adminRolesProvider);
+                      } on ApiException catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                        }
+                      }
+                    },
+                    child: const Text('İzinleri düzenle'),
+                  ),
+                ),
+              ],
             ),
           );
         },
@@ -527,6 +876,60 @@ final adminCashboxProvider = FutureProvider.autoDispose((ref) {
 
 class AdminCashboxScreen extends ConsumerWidget {
   const AdminCashboxScreen({super.key});
+
+  Future<void> _manualMovement(BuildContext context, WidgetRef ref, UserCashboxRow user) async {
+    final amountCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    var direction = 1;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('${user.fullName} — manuel hareket'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 1, label: Text('Giriş')),
+                  ButtonSegment(value: 2, label: Text('Çıkış')),
+                ],
+                selected: {direction},
+                onSelectionChanged: (v) => setDialogState(() => direction = v.first),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Tutar (USD)'),
+              ),
+              TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Açıklama')),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Kaydet')),
+          ],
+        ),
+      ),
+    );
+    final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
+    final description = descCtrl.text.trim();
+    amountCtrl.dispose();
+    descCtrl.dispose();
+    if (ok != true || amount <= 0 || description.isEmpty) return;
+    try {
+      await ref.read(adminRepositoryProvider).recordUserManualMovement(
+            user.userId,
+            amount: amount,
+            description: description,
+            direction: direction,
+          );
+      ref.invalidate(adminCashboxProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -558,6 +961,7 @@ class AdminCashboxScreen extends ConsumerWidget {
                 title: Text(u.fullName),
                 subtitle: Text('${u.email} · ${u.role}'),
                 trailing: Text(formatUsd(u.balance)),
+                onTap: () => _manualMovement(context, ref, u),
               ),
             ),
           ),
@@ -624,6 +1028,42 @@ class AdminPrimPackagesScreen extends ConsumerWidget {
               title: Text(p.name),
               subtitle: Text(p.distributorName ?? '-'),
               trailing: Icon(p.isActive ? Icons.check_circle : Icons.pause_circle, color: p.isActive ? Colors.green : Colors.grey),
+              onTap: () async {
+                try {
+                  final detail = await ref.read(adminRepositoryProvider).getPrimPackage(p.id);
+                  if (!context.mounted) return;
+                  await showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: Text(detail.name),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Durum: ${detail.isActive ? 'Aktif' : 'Pasif'}'),
+                            const SizedBox(height: 12),
+                            ...detail.brackets.map(
+                              (b) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  '${formatUsd(b.minAmountUsd)} – ${formatUsd(b.maxAmountUsd)} → ${formatUsd(b.primUsdPerTransfer)}',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat')),
+                      ],
+                    ),
+                  );
+                } on ApiException catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+                  }
+                }
+              },
             ),
           );
         },

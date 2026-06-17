@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hanpay_mobil/core/network/api_client.dart';
 import 'package:hanpay_mobil/shared/models/balance_models.dart';
+import 'package:hanpay_mobil/shared/models/json_helpers.dart';
 import 'package:hanpay_mobil/shared/models/state_model.dart';
 import 'package:hanpay_mobil/shared/models/user_model.dart';
 
@@ -39,6 +40,43 @@ class AgentRepository {
       return (response.data ?? [])
           .map((e) => StateDto.fromJson(e as Map<String, dynamic>))
           .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<double> updateOwnExchangeRate(double usdTryExchangeRate) async {
+    try {
+      final response = await _dio.put<Map<String, dynamic>>(
+        '/agent/exchange-rate',
+        data: {'usdTryExchangeRate': usdTryExchangeRate},
+      );
+      final data = response.data ?? {};
+      return jsonDouble(data['usdTryExchangeRate'] ?? usdTryExchangeRate);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<double> creditAgentBalance(int id, {required double amount, String? description}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/agents/$id/balance/credit',
+        data: {'amount': amount, 'description': description ?? ''},
+      );
+      return jsonDouble((response.data ?? {})['balance']);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<double> debitAgentBalance(int id, {required double amount, String? description}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/agents/$id/balance/debit',
+        data: {'amount': amount, 'description': description ?? ''},
+      );
+      return jsonDouble((response.data ?? {})['balance']);
     } on DioException catch (e) {
       throw mapDioException(e);
     }

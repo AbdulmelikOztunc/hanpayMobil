@@ -51,6 +51,44 @@ class AuthRepository {
     }
   }
 
+  Future<String?> forgotPassword({required String email}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/forgot-password',
+        data: {'email': email},
+      );
+      final data = response.data ?? {};
+      return data['token']?.toString() ?? data['resetToken']?.toString();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AuthSession> resetPassword({
+    required String email,
+    required String token,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/auth/reset-password',
+        data: {
+          'email': email,
+          'token': token,
+          'newPassword': newPassword,
+        },
+      );
+      final session = AuthSession.fromApiResponse(response.data ?? {});
+      if (session.token.isEmpty) {
+        throw ApiException('Şifre sıfırlama yanıtında token bulunamadı.');
+      }
+      await _storage.saveSession(session.encode());
+      return session;
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<void> logoutRemote() async {
     try {
       await _dio.post<void>('/auth/logout');

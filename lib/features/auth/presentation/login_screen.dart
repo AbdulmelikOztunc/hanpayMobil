@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/core/env.dart';
 import 'package:hanpay_mobil/core/i18n/translator_ext.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
@@ -282,7 +283,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   loading: _loading,
                                   child: Text(t('button_login_submit')),
                                 ),
-                                const SizedBox(height: 16),
+                                TextButton(
+                                  onPressed: _loading ? null : () => context.go('/forgot-password'),
+                                  child: Text(
+                                    'Şifremi unuttum',
+                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
                                 Text(
                                   t('login_security_note'),
                                   textAlign: TextAlign.center,

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:hanpay_mobil/core/network/api_exception.dart';
+import 'package:hanpay_mobil/features/agent/data/agent_repository.dart';
 import 'package:hanpay_mobil/features/dashboard/data/dashboard_repository.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 import 'package:hanpay_mobil/shared/widgets/stat_card.dart';
@@ -10,6 +13,34 @@ final agentDashboardProvider = FutureProvider.autoDispose((ref) {
 
 class AgentDashboardScreen extends ConsumerWidget {
   const AgentDashboardScreen({super.key});
+
+  Future<void> _editExchangeRate(BuildContext context, WidgetRef ref, double? current) async {
+    final ctrl = TextEditingController(text: current?.toStringAsFixed(4) ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('USD/TRY kuru'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Kur'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Kaydet')),
+        ],
+      ),
+    );
+    final value = double.tryParse(ctrl.text.replaceAll(',', '.'));
+    ctrl.dispose();
+    if (ok != true || value == null || value <= 0) return;
+    try {
+      await ref.read(agentRepositoryProvider).updateOwnExchangeRate(value);
+      ref.invalidate(agentDashboardProvider);
+    } on ApiException catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -68,16 +99,16 @@ class AgentDashboardScreen extends ConsumerWidget {
                 ),
               ],
             ),
-            if (data.usdTryExchangeRate != null) ...[
-              const SizedBox(height: 16),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.currency_exchange),
-                  title: const Text('USD/TRY kuru'),
-                  trailing: Text(data.usdTryExchangeRate!.toStringAsFixed(4)),
-                ),
+            const SizedBox(height: 16),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.currency_exchange),
+                title: const Text('USD/TRY kuru'),
+                subtitle: const Text('Acente kuru güncelle'),
+                trailing: Text(data.usdTryExchangeRate?.toStringAsFixed(4) ?? '-'),
+                onTap: () => _editExchangeRate(context, ref, data.usdTryExchangeRate),
               ),
-            ],
+            ),
           ],
         ),
       ),

@@ -295,6 +295,9 @@ class _CreateTransferScreenState extends _TransferFormStateBase<CreateTransferSc
       submitLabel: ref.tw('nav_create_transfer'),
       onSubmit: () async {
         await refreshQuote();
+        if (selectedState != null) {
+          await ref.read(transferRepositoryProvider).getPreviewTransferNumber(selectedState!.id);
+        }
         final number = await ref.read(transferRepositoryProvider).createTransfer(buildBody());
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Havale oluşturuldu: $number')));

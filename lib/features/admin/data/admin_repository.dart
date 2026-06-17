@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hanpay_mobil/core/network/api_client.dart';
 import 'package:hanpay_mobil/shared/models/admin_models.dart';
 import 'package:hanpay_mobil/shared/models/balance_models.dart';
+import 'package:hanpay_mobil/shared/models/json_helpers.dart';
 import 'package:hanpay_mobil/shared/models/state_model.dart';
 import 'package:hanpay_mobil/shared/models/user_model.dart';
 
@@ -34,7 +35,31 @@ class AdminRepository {
     try {
       await _dio.post<void>(
         '/admin/requests/$id/reject',
-        data: adminResponse == null ? null : {'adminResponse': adminResponse},
+        data: adminResponse == null || adminResponse.trim().isEmpty
+            ? null
+            : {'adminResponse': adminResponse.trim()},
+      );
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> resolveTransferCancellationRequest(
+    int id, {
+    required String action,
+    required String adminNote,
+    int? commissionSettlement,
+    int? targetStateId,
+  }) async {
+    try {
+      await _dio.post<void>(
+        '/admin/requests/$id/resolve-cancellation',
+        data: {
+          'action': action,
+          'adminNote': adminNote,
+          if (commissionSettlement != null) 'commissionSettlement': commissionSettlement,
+          if (targetStateId != null) 'targetStateId': targetStateId,
+        },
       );
     } on DioException catch (e) {
       throw mapDioException(e);
@@ -230,6 +255,222 @@ class AdminRepository {
       return (response.data ?? [])
           .map((e) => PrimPackageRow.fromJson(e as Map<String, dynamic>))
           .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<PrimPackageDetail> getPrimPackage(int id) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/distributor-prim-packages/$id');
+      return PrimPackageDetail.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<PrimPackageDetail> createPrimPackage(Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/distributor-prim-packages', data: body);
+      return PrimPackageDetail.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<PrimPackageDetail> updatePrimPackage(int id, Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.put<Map<String, dynamic>>('/distributor-prim-packages/$id', data: body);
+      return PrimPackageDetail.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> deletePrimPackage(int id) async {
+    try {
+      await _dio.delete<void>('/distributor-prim-packages/$id');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AdminAgentDto> createAgent(Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/agents', data: body);
+      return AdminAgentDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AdminAgentDto> updateAgent(int id, Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.put<Map<String, dynamic>>('/agents/$id', data: body);
+      return AdminAgentDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> deleteAgent(int id) async {
+    try {
+      await _dio.delete<void>('/agents/$id');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AdminDistributorDto> createDistributor(Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/distributors', data: body);
+      return AdminDistributorDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AdminDistributorDto> updateDistributor(int id, Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.put<Map<String, dynamic>>('/distributors/$id', data: body);
+      return AdminDistributorDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<double> creditDistributorBalance(int id, {required double amount, String? description}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/distributors/$id/balance/credit',
+        data: {'amount': amount, 'description': description ?? ''},
+      );
+      return jsonDouble((response.data ?? {})['balance']);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<double> debitDistributorBalance(int id, {required double amount, String? description}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/distributors/$id/balance/debit',
+        data: {'amount': amount, 'description': description ?? ''},
+      );
+      return jsonDouble((response.data ?? {})['balance']);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AppUserDto> getUser(int id) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/users/$id');
+      return AppUserDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> createUser(Map<String, dynamic> body) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/users', data: body);
+      return response.data ?? {};
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> updateUser(int id, Map<String, dynamic> body) async {
+    try {
+      await _dio.put<void>('/users/$id', data: body);
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> deleteUser(int id) async {
+    try {
+      await _dio.delete<void>('/users/$id');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> assignUser(int userId, {int? agentId, int? distributorId}) async {
+    try {
+      await _dio.post<void>(
+        '/users/$userId/assign',
+        data: {
+          if (agentId != null) 'agentId': agentId,
+          if (distributorId != null) 'distributorId': distributorId,
+        },
+      );
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> unassignUser(int userId) async {
+    try {
+      await _dio.post<void>('/users/$userId/unassign');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<String>> getPermissionsCatalog() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/permissions');
+      return (response.data ?? []).map((e) => e.toString()).toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<String>> getRolePermissions(int roleId) async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/roles/$roleId/permissions');
+      return (response.data ?? []).map((e) => e.toString()).toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<String>> updateRolePermissions(int roleId, List<String> permissions) async {
+    try {
+      final response = await _dio.put<List<dynamic>>(
+        '/roles/$roleId/permissions',
+        data: {'permissions': permissions},
+      );
+      return (response.data ?? []).map((e) => e.toString()).toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<ManualCashboxResult> recordUserManualMovement(
+    int userId, {
+    required double amount,
+    required String description,
+    required int direction,
+    int source = 2,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/cashboxes/users/$userId/manual-movement',
+        data: {
+          'amount': amount,
+          'direction': direction,
+          'source': source,
+          'description': description,
+        },
+      );
+      final data = response.data ?? {};
+      return ManualCashboxResult(
+        centralBalance: jsonDouble(data['centralBalance'] ?? data['CentralBalance']),
+        userBalance: jsonDouble(data['userBalance'] ?? data['UserBalance']),
+      );
     } on DioException catch (e) {
       throw mapDioException(e);
     }

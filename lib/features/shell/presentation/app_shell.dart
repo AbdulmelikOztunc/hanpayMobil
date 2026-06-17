@@ -5,6 +5,7 @@ import 'package:hanpay_mobil/core/i18n/translator_ext.dart';
 import 'package:hanpay_mobil/core/navigation/app_nav_config.dart';
 import 'package:hanpay_mobil/core/theme/app_colors.dart';
 import 'package:hanpay_mobil/features/auth/presentation/auth_controller.dart';
+import 'package:hanpay_mobil/features/notifications/data/notification_repository.dart';
 import 'package:hanpay_mobil/shared/models/role.dart';
 import 'package:hanpay_mobil/shared/widgets/brand_logo.dart';
 
@@ -47,6 +48,23 @@ class AppShell extends ConsumerWidget {
               ),
           ],
         ),
+        actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final unread = ref.watch(unreadNotificationCountProvider);
+              final count = unread.maybeWhen(data: (c) => c, orElse: () => 0);
+              return IconButton(
+                tooltip: ref.tw('layout_notifications'),
+                onPressed: () => context.go('/notifications'),
+                icon: Badge(
+                  isLabelVisible: count > 0,
+                  label: Text('$count'),
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       drawer: drawerGroups.isEmpty
           ? null

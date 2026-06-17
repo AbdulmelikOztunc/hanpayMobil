@@ -20,7 +20,9 @@ import 'package:hanpay_mobil/features/transfers/presentation/agent_transfer_list
 import 'package:hanpay_mobil/features/transfers/presentation/distributor_transfer_detail_screen.dart';
 import 'package:hanpay_mobil/features/transfers/presentation/distributor_transfers_screen.dart';
 import 'package:hanpay_mobil/shared/models/role.dart';
-import 'package:hanpay_mobil/shared/widgets/coming_soon_screen.dart';
+import 'package:hanpay_mobil/features/insights/presentation/insights_screens.dart';
+import 'package:hanpay_mobil/features/notifications/presentation/notifications_screen.dart';
+import 'package:hanpay_mobil/features/auth/presentation/forgot_password_screen.dart';
 
 final _routerRefreshProvider = Provider<ValueNotifier<int>>((ref) {
   final notifier = ValueNotifier(0);
@@ -45,8 +47,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loggedIn = auth.isAuthenticated;
       final path = state.uri.path;
       final onLogin = path == '/login';
+      final onForgot = path == '/forgot-password';
 
-      if (!loggedIn) return onLogin ? null : '/login';
+      if (!loggedIn) return (onLogin || onForgot) ? null : '/login';
 
       final role = auth.session!.role;
       final home = postLoginPath(role);
@@ -61,6 +64,8 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/forgot-password', builder: (_, _) => const ForgotPasswordScreen()),
+      GoRoute(path: '/notifications', builder: (_, _) => _shell(ref, const NotificationsScreen())),
 
       // Agent
       GoRoute(path: '/agent/dashboard', builder: (_, _) => _shell(ref, const AgentDashboardScreen())),
@@ -89,15 +94,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/agent/users', builder: (_, _) => _shell(ref, const AgentUsersScreen())),
       GoRoute(
         path: '/agent/insights/monthly-transfer-volume',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_monthly_transfer_volume')),
+        builder: (_, _) => _shell(ref, const MonthlyTransferVolumeScreen()),
       ),
       GoRoute(
         path: '/agent/insights/statistics',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_insights_statistics')),
+        builder: (_, _) => _shell(ref, const PaymentDistributionScreen()),
       ),
       GoRoute(
         path: '/agent/reports/transfers',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_transfer_report')),
+        builder: (_, _) => _shell(ref, const TransferReportScreen()),
       ),
 
       // Distributor
@@ -124,15 +129,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/distributor/users', builder: (_, _) => _shell(ref, const DistributorUsersScreen())),
       GoRoute(
         path: '/distributor/insights/monthly-transfer-volume',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_monthly_transfer_volume')),
+        builder: (_, _) => _shell(ref, const MonthlyTransferVolumeScreen()),
       ),
       GoRoute(
         path: '/distributor/insights/statistics',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_insights_statistics')),
+        builder: (_, _) => _shell(ref, const PaymentDistributionScreen()),
       ),
       GoRoute(
         path: '/distributor/reports/transfers',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_transfer_report')),
+        builder: (_, _) => _shell(ref, const TransferReportScreen()),
       ),
 
       // Admin
@@ -168,15 +173,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/admin/cashbox', builder: (_, _) => _shell(ref, const AdminCashboxScreen())),
       GoRoute(
         path: '/admin/insights/monthly-transfer-volume',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_monthly_transfer_volume')),
+        builder: (_, _) => _shell(ref, const MonthlyTransferVolumeScreen()),
       ),
       GoRoute(
         path: '/admin/insights/statistics',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_insights_statistics')),
+        builder: (_, _) => _shell(ref, const PaymentDistributionScreen()),
       ),
       GoRoute(
         path: '/admin/reports',
-        builder: (_, _) => _shell(ref, const ComingSoonScreen(titleKey: 'nav_system_reports')),
+        builder: (_, _) => _shell(ref, const TransferReportScreen(showAdminFilters: true)),
       ),
       GoRoute(path: '/admin/roles', builder: (_, _) => _shell(ref, const AdminRolesScreen())),
       GoRoute(path: '/admin/settings', builder: (_, _) => _shell(ref, const AdminSettingsScreen())),

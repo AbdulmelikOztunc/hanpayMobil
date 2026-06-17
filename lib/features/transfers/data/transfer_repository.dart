@@ -101,6 +101,23 @@ class TransferRepository {
     }
   }
 
+  Future<String?> getPreviewTransferNumber(int stateId) async {
+    try {
+      final response = await _dio.get<dynamic>(
+        '/transfers/preview-number',
+        queryParameters: {'stateId': stateId},
+      );
+      final data = response.data;
+      if (data is String) return data;
+      if (data is Map) {
+        return data['transferNumber']?.toString() ?? data['previewNumber']?.toString();
+      }
+      return data?.toString();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
   Future<void> cancelAsAdmin(int id, {required int commissionSettlement, String? adminNote}) async {
     try {
       await _dio.post<void>('/transfers/$id/cancel', data: {

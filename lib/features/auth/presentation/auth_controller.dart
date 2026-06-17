@@ -64,6 +64,11 @@ class AuthController extends Notifier<AuthState> {
     state = AuthState(session: session, isBootstrapping: false);
   }
 
+  void applySession(AuthSession session) {
+    _syncToken(session);
+    state = AuthState(session: session, isBootstrapping: false);
+  }
+
   Future<void> logout({bool localOnly = false}) async {
     if (!localOnly) {
       await _repo.logoutRemote();
