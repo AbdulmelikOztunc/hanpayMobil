@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/core/i18n/app_locale.dart';
 import 'package:hanpay_mobil/core/i18n/translator_ext.dart';
+import 'package:hanpay_mobil/core/network/api_exception.dart';
 import 'package:hanpay_mobil/features/transfers/data/transfer_repository.dart';
 import 'package:hanpay_mobil/features/transfers/presentation/transfer_receipt_pdf.dart';
 import 'package:hanpay_mobil/shared/models/transfer.dart';
@@ -34,6 +36,53 @@ class AgentTransferDetailScreen extends ConsumerWidget {
     final t = ref.read(translatorProvider);
     final bytes = await buildTransferReceiptPdf(transfer: tx, locale: locale, t: t);
     await Printing.sharePdf(bytes: bytes, filename: 'havale-${tx.transferNumber}.pdf');
+  }
+
+  bool _canCancel(TransferStatus status) {
+    return status != TransferStatus.paid &&
+        status != TransferStatus.cancelled &&
+        status != TransferStatus.frozen &&
+        status != TransferStatus.cancellationRequested;
+  }
+
+  bool _canEdit(TransferStatus status) {
+    return status == TransferStatus.pending ||
+        status == TransferStatus.onHold ||
+        status == TransferStatus.inProgress;
+  }
+
+  Future<void> _requestCancellation(BuildContext context, WidgetRef ref, TransferDto tx) async {
+    final reasonCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('İptal talebi'),
+        content: TextField(
+          controller: reasonCtrl,
+          decoration: const InputDecoration(labelText: 'Gerekçe'),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Gönder')),
+        ],
+      ),
+    );
+    if (ok != true || reasonCtrl.text.trim().isEmpty) return;
+    try {
+      await ref.read(transferRepositoryProvider).createCancellationRequest(
+            tx.id,
+            reason: reasonCtrl.text.trim(),
+          );
+      ref.invalidate(transferByIdProvider(id));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('İptal talebi gönderildi')));
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 
   @override
@@ -148,6 +197,22 @@ class AgentTransferDetailScreen extends ConsumerWidget {
                 icon: const Icon(Icons.share),
                 label: const Text('Makbuzu paylaş'),
               ),
+              if (_canEdit(tx.status)) ...[
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () => context.push('/agent/transfers/${tx.id}/edit'),
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Düzenle'),
+                ),
+              ],
+              if (_canCancel(tx.status)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _requestCancellation(context, ref, tx),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('İptal talebi gönder'),
+                ),
+              ],
             ],
           ),
         );

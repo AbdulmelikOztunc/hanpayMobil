@@ -1,0 +1,241 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hanpay_mobil/core/network/api_client.dart';
+import 'package:hanpay_mobil/shared/models/admin_models.dart';
+import 'package:hanpay_mobil/shared/models/balance_models.dart';
+import 'package:hanpay_mobil/shared/models/state_model.dart';
+import 'package:hanpay_mobil/shared/models/user_model.dart';
+
+class AdminRepository {
+  AdminRepository(this._dio);
+
+  final Dio _dio;
+
+  Future<List<AdminRequestDto>> getRequests() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/admin/requests');
+      return (response.data ?? [])
+          .map((e) => AdminRequestDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> approveRequest(int id) async {
+    try {
+      await _dio.post<void>('/admin/requests/$id/approve');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> rejectRequest(int id, {String? adminResponse}) async {
+    try {
+      await _dio.post<void>(
+        '/admin/requests/$id/reject',
+        data: adminResponse == null ? null : {'adminResponse': adminResponse},
+      );
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<AdminTransferRow>> getTransfers({String? search, int? take}) async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/admin/transfers',
+        queryParameters: {
+          if (search != null && search.isNotEmpty) 'search': search,
+          if (take != null) 'take': take,
+        },
+      );
+      return (response.data ?? [])
+          .map((e) => AdminTransferRow.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<AdminAgentDto>> getAgents() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/agents/list');
+      return (response.data ?? [])
+          .map((e) => AdminAgentDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AdminAgentDto> getAgent(int id) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/agents/$id');
+      return AdminAgentDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<AdminDistributorDto>> getDistributors() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/distributors');
+      return (response.data ?? [])
+          .map((e) => AdminDistributorDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<AdminDistributorDto> getDistributor(int id) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/distributors/$id');
+      return AdminDistributorDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<AppUserDto>> getUsers({String? role}) async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/users',
+        queryParameters: role == null ? null : {'role': role},
+      );
+      return (response.data ?? [])
+          .map((e) => AppUserDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<StateDto>> getStates() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/states');
+      return (response.data ?? [])
+          .map((e) => StateDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<StateDto> createState({required String name, required String code}) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/states', data: {
+        'name': name,
+        'code': code,
+      });
+      return StateDto.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> deleteState(int id) async {
+    try {
+      await _dio.delete<void>('/states/$id');
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<double> getMinimumTransferUsd() async {
+    try {
+      final response = await _dio.get<dynamic>('/transfers/minimum-transfer-usd');
+      final data = response.data;
+      if (data is num) return data.toDouble();
+      if (data is Map) return (data['minimumTransferUsd'] as num?)?.toDouble() ?? 0;
+      return 0;
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> updateMinimumTransferUsd(double value) async {
+    try {
+      await _dio.put<void>('/transfers/minimum-transfer-usd', data: {
+        'minimumTransferUsd': value,
+      });
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<int> getReceiptRetentionDays() async {
+    try {
+      final response = await _dio.get<dynamic>('/transfers/receipt-retention-days');
+      final data = response.data;
+      if (data is num) return data.toInt();
+      if (data is Map) return (data['receiptRetentionDays'] as num?)?.toInt() ?? 0;
+      return 0;
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<void> updateReceiptRetentionDays(int value) async {
+    try {
+      await _dio.put<void>('/transfers/receipt-retention-days', data: {
+        'receiptRetentionDays': value,
+      });
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<RoleDto>> getRoles() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/roles');
+      return (response.data ?? [])
+          .map((e) => RoleDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<CashboxesSummary> getCashboxes() async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>('/cashboxes');
+      return CashboxesSummary.fromJson(response.data ?? {});
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<DistributorPrimRow>> getAllPrims({int? year, int? month}) async {
+    try {
+      final response = await _dio.get<List<dynamic>>(
+        '/distributors/prims',
+        queryParameters: {
+          if (year != null) 'year': year,
+          if (month != null) 'month': month,
+        },
+      );
+      return (response.data ?? [])
+          .map((e) => DistributorPrimRow.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+
+  Future<List<PrimPackageRow>> getPrimPackages() async {
+    try {
+      final response = await _dio.get<List<dynamic>>('/distributor-prim-packages');
+      return (response.data ?? [])
+          .map((e) => PrimPackageRow.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (e) {
+      throw mapDioException(e);
+    }
+  }
+}
+
+final adminRepositoryProvider = Provider<AdminRepository>((ref) {
+  return AdminRepository(ref.watch(dioProvider));
+});
