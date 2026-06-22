@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
+import 'package:hanpay_mobil/features/admin/data/admin_repository.dart';
 import 'package:hanpay_mobil/features/auth/presentation/auth_controller.dart';
 import 'package:hanpay_mobil/features/insights/data/insights_repository.dart';
 import 'package:hanpay_mobil/shared/models/insights_models.dart';
@@ -110,6 +111,23 @@ class _MonthlyTransferVolumeScreenState extends ConsumerState<MonthlyTransferVol
                     ],
                   ),
                   const SizedBox(height: 16),
+                  if (data.points.isNotEmpty) ...[
+                    Text('Grafik', style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    _VerticalBarChart(
+                      items: data.points
+                          .map(
+                            (p) => _BarChartItem(
+                              label: monthFmt.format(DateTime(p.year, p.month)),
+                              value: p.amount,
+                              subtitle: '${p.transferCount} adet',
+                            ),
+                          )
+                          .toList(),
+                      valueFormatter: formatUsd,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Text('Aylık dağılım', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   if (data.points.isEmpty)
@@ -244,6 +262,24 @@ class _PaymentDistributionScreenState extends ConsumerState<PaymentDistributionS
                     ],
                   ),
                   const SizedBox(height: 16),
+                  _VerticalBarChart(
+                    items: [
+                      _BarChartItem(label: 'Nakit', value: data.usdTotals.cash, color: Colors.green.shade600),
+                      _BarChartItem(label: 'Banka', value: data.usdTotals.bank, color: Colors.blue.shade600),
+                    ],
+                    valueFormatter: formatUsd,
+                    title: 'USD dağılımı',
+                  ),
+                  const SizedBox(height: 12),
+                  _VerticalBarChart(
+                    items: [
+                      _BarChartItem(label: 'Nakit', value: data.tlTotals.cash, color: Colors.green.shade600),
+                      _BarChartItem(label: 'Banka', value: data.tlTotals.bank, color: Colors.blue.shade600),
+                    ],
+                    valueFormatter: (v) => '₺${v.toStringAsFixed(2)}',
+                    title: 'TL dağılımı',
+                  ),
+                  const SizedBox(height: 12),
                   _DistributionCard(
                     title: 'USD — Nakit / Banka',
                     cash: data.usdTotals.cash,
@@ -327,17 +363,21 @@ class _DistributionCard extends StatelessWidget {
   }
 }
 
-final transferReportProvider =
-    FutureProvider.autoDispose.family<List<TransferReportRow>, (InsightsScope, String)>((ref, args) {
-  final scope = args.$1;
-  final period = args.$2;
-  return ref.watch(insightsRepositoryProvider).getTransferReport(
-        period: period,
-        agentId: scope.agentId,
-        distributorId: scope.distributorId,
-        take: 200,
-      );
-});
+final transferReportProvider = FutureProvider.autoDispose
+    .family<List<TransferReportRow>, ({InsightsScope scope, String period, int? filterAgentId, int? filterDistributorId, String? status, int? stateId})>(
+  (ref, args) {
+    final agentId = args.filterAgentId ?? args.scope.agentId;
+    final distributorId = args.filterDistributorId ?? args.scope.distributorId;
+    return ref.watch(insightsRepositoryProvider).getTransferReport(
+          period: args.period,
+          agentId: agentId,
+          distributorId: distributorId,
+          status: args.status,
+          stateId: args.stateId,
+          take: 200,
+        );
+  },
+);
 
 class TransferReportScreen extends ConsumerStatefulWidget {
   const TransferReportScreen({super.key, this.showAdminFilters = false});
@@ -351,14 +391,31 @@ class TransferReportScreen extends ConsumerStatefulWidget {
 class _TransferReportScreenState extends ConsumerState<TransferReportScreen> {
   String period = 'thisMonth';
   var _exporting = false;
+  int? _filterAgentId;
+  int? _filterDistributorId;
+  String? _filterStatus;
+  int? _filterStateId;
 
-  Future<void> _exportExcel(InsightsScope scope) async {
+  ({InsightsScope scope, String period, int? filterAgentId, int? filterDistributorId, String? status, int? stateId}) _query(InsightsScope scope) => (
+        scope: scope,
+        period: period,
+        filterAgentId: widget.showAdminFilters ? _filterAgentId : null,
+        filterDistributorId: widget.showAdminFilters ? _filterDistributorId : null,
+        status: widget.showAdminFilters ? _filterStatus : null,
+        stateId: widget.showAdminFilters ? _filterStateId : null,
+      );
+
+  Future<void> _exportExcel(({InsightsScope scope, String period, int? filterAgentId, int? filterDistributorId, String? status, int? stateId}) query) async {
     setState(() => _exporting = true);
     try {
+      final agentId = query.filterAgentId ?? query.scope.agentId;
+      final distributorId = query.filterDistributorId ?? query.scope.distributorId;
       final export = await ref.read(insightsRepositoryProvider).downloadTransferReportExcel(
-            period: period,
-            agentId: scope.agentId,
-            distributorId: scope.distributorId,
+            period: query.period,
+            agentId: agentId,
+            distributorId: distributorId,
+            status: query.status,
+            stateId: query.stateId,
             take: 200,
           );
       final dir = await getTemporaryDirectory();
@@ -381,32 +438,97 @@ class _TransferReportScreenState extends ConsumerState<TransferReportScreen> {
   @override
   Widget build(BuildContext context) {
     final scope = _scopeFromRef(ref);
-    final async = ref.watch(transferReportProvider((scope, period)));
+    final query = _query(scope);
+    final async = ref.watch(transferReportProvider(query));
     final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
+    final agentsAsync = widget.showAdminFilters ? ref.watch(_reportAgentsProvider) : null;
+    final distributorsAsync = widget.showAdminFilters ? ref.watch(_reportDistributorsProvider) : null;
+    final statesAsync = widget.showAdminFilters ? ref.watch(_reportStatesProvider) : null;
 
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'today', label: Text('Bugün')),
-                    ButtonSegment(value: 'thisMonth', label: Text('Bu ay')),
+              if (widget.showAdminFilters) ...[
+                agentsAsync?.when(
+                  data: (agents) => DropdownButtonFormField<int?>(
+                    initialValue: _filterAgentId,
+                    decoration: const InputDecoration(labelText: 'Acente'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Tümü')),
+                      ...agents.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))),
+                    ],
+                    onChanged: (v) => setState(() => _filterAgentId = v),
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ) ?? const SizedBox.shrink(),
+                const SizedBox(height: 8),
+                distributorsAsync?.when(
+                  data: (distributors) => DropdownButtonFormField<int?>(
+                    initialValue: _filterDistributorId,
+                    decoration: const InputDecoration(labelText: 'Dağıtıcı'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Tümü')),
+                      ...distributors.map((d) => DropdownMenuItem(value: d.id, child: Text(d.name))),
+                    ],
+                    onChanged: (v) => setState(() => _filterDistributorId = v),
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ) ?? const SizedBox.shrink(),
+                const SizedBox(height: 8),
+                statesAsync?.when(
+                  data: (states) => DropdownButtonFormField<int?>(
+                    initialValue: _filterStateId,
+                    decoration: const InputDecoration(labelText: 'Eyalet'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Tümü')),
+                      ...states.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))),
+                    ],
+                    onChanged: (v) => setState(() => _filterStateId = v),
+                  ),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ) ?? const SizedBox.shrink(),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String?>(
+                  initialValue: _filterStatus,
+                  decoration: const InputDecoration(labelText: 'Durum'),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('Tümü')),
+                    DropdownMenuItem(value: 'Pending', child: Text('Bekliyor')),
+                    DropdownMenuItem(value: 'Paid', child: Text('Ödendi')),
+                    DropdownMenuItem(value: 'Cancelled', child: Text('İptal')),
+                    DropdownMenuItem(value: 'InProgress', child: Text('Devam ediyor')),
                   ],
-                  selected: {period},
-                  onSelectionChanged: (v) => setState(() => period = v.first),
+                  onChanged: (v) => setState(() => _filterStatus = v),
                 ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Excel indir',
-                onPressed: _exporting ? null : () => _exportExcel(scope),
-                icon: _exporting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.download),
+                const SizedBox(height: 8),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'today', label: Text('Bugün')),
+                        ButtonSegment(value: 'thisMonth', label: Text('Bu ay')),
+                      ],
+                      selected: {period},
+                      onSelectionChanged: (v) => setState(() => period = v.first),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Excel indir',
+                    onPressed: _exporting ? null : () => _exportExcel(query),
+                    icon: _exporting
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.download),
+                  ),
+                ],
               ),
             ],
           ),
@@ -416,13 +538,13 @@ class _TransferReportScreenState extends ConsumerState<TransferReportScreen> {
             loading: () => const LoadingView(),
             error: (e, _) => ErrorView(
               message: e.toString(),
-              onRetry: () => ref.invalidate(transferReportProvider((scope, period))),
+              onRetry: () => ref.invalidate(transferReportProvider(query)),
             ),
             data: (rows) {
               final totalAmount = rows.fold<double>(0, (s, r) => s + r.amount);
               final totalCommission = rows.fold<double>(0, (s, r) => s + r.netCommission);
               return RefreshIndicator(
-                onRefresh: () async => ref.invalidate(transferReportProvider((scope, period))),
+                onRefresh: () async => ref.invalidate(transferReportProvider(query)),
                 child: rows.isEmpty
                     ? ListView(
                         children: const [
@@ -480,3 +602,121 @@ class _TransferReportScreenState extends ConsumerState<TransferReportScreen> {
     );
   }
 }
+
+class _BarChartItem {
+  const _BarChartItem({
+    required this.label,
+    required this.value,
+    this.subtitle,
+    this.color,
+  });
+
+  final String label;
+  final double value;
+  final String? subtitle;
+  final Color? color;
+}
+
+class _VerticalBarChart extends StatelessWidget {
+  const _VerticalBarChart({
+    required this.items,
+    required this.valueFormatter,
+    this.title,
+    this.height = 160,
+  });
+
+  final List<_BarChartItem> items;
+  final String Function(double) valueFormatter;
+  final String? title;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    final maxValue = items.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final theme = Theme.of(context);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (title != null) ...[
+              Text(title!, style: theme.textTheme.titleMedium),
+              const SizedBox(height: 12),
+            ],
+            SizedBox(
+              height: height,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final item in items)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              valueFormatter(item.value),
+                              style: theme.textTheme.labelSmall,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                            ),
+                            const SizedBox(height: 4),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: FractionallySizedBox(
+                                  heightFactor: maxValue > 0 ? (item.value / maxValue).clamp(0.05, 1.0) : 0.05,
+                                  widthFactor: 0.65,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: item.color ?? theme.colorScheme.primary,
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              item.label,
+                              style: theme.textTheme.labelSmall,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (item.subtitle != null)
+                              Text(
+                                item.subtitle!,
+                                style: theme.textTheme.labelSmall?.copyWith(color: theme.hintColor),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final _reportAgentsProvider = FutureProvider.autoDispose((ref) {
+  return ref.watch(adminRepositoryProvider).getAgents();
+});
+
+final _reportDistributorsProvider = FutureProvider.autoDispose((ref) {
+  return ref.watch(adminRepositoryProvider).getDistributors();
+});
+
+final _reportStatesProvider = FutureProvider.autoDispose((ref) {
+  return ref.watch(adminRepositoryProvider).getStates();
+});

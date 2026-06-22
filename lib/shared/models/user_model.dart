@@ -10,6 +10,8 @@ class AppUserDto {
     this.phone,
     this.agentName,
     this.distributorName,
+    this.agentId,
+    this.distributorId,
   });
 
   final int id;
@@ -20,6 +22,8 @@ class AppUserDto {
   final String? phone;
   final String? agentName;
   final String? distributorName;
+  final int? agentId;
+  final int? distributorId;
 
   factory AppUserDto.fromJson(Map<String, dynamic> json) => AppUserDto(
         id: jsonInt(json['id']),
@@ -30,5 +34,7 @@ class AppUserDto {
         phone: json['phone'] as String?,
         agentName: json['agentName'] as String?,
         distributorName: json['distributorName'] as String?,
+        agentId: (json['agentId'] as num?)?.toInt(),
+        distributorId: (json['distributorId'] as num?)?.toInt(),
       );
 }

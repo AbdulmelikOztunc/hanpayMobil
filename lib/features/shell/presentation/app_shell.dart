@@ -127,7 +127,7 @@ class AppShell extends ConsumerWidget {
               ),
             ),
       body: child,
-      floatingActionButton: role.isAgent && path.startsWith('/agent/transfers')
+      floatingActionButton: role.isAgent && path == '/agent/transfers'
           ? FloatingActionButton.extended(
               onPressed: () => context.go('/agent/transfers/create'),
               icon: const Icon(Icons.add),

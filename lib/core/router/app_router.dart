@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/features/admin/presentation/admin_operations_hub_screen.dart';
 import 'package:hanpay_mobil/features/admin/presentation/admin_screens.dart';
+import 'package:hanpay_mobil/features/admin/presentation/admin_partner_detail_screens.dart';
+import 'package:hanpay_mobil/features/admin/presentation/admin_prim_screens.dart';
+import 'package:hanpay_mobil/features/admin/presentation/admin_user_detail_screen.dart';
 import 'package:hanpay_mobil/features/agent/presentation/agent_balance_screen.dart';
 import 'package:hanpay_mobil/features/agent/presentation/agent_users_screen.dart';
 import 'package:hanpay_mobil/features/agent/presentation/transfer_form_screens.dart';
@@ -165,7 +168,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(path: '/admin/users', builder: (_, _) => _shell(ref, const AdminUsersScreen())),
+      GoRoute(path: '/admin/users', builder: (_, _) => _shell(ref, const AdminUsersScreen()), routes: [
+        GoRoute(
+          path: ':id',
+          builder: (_, state) => AdminUserDetailScreen(id: int.parse(state.pathParameters['id']!)),
+        ),
+      ]),
       GoRoute(path: '/admin/states', builder: (_, _) => _shell(ref, const AdminStatesScreen())),
       GoRoute(path: '/admin/prim-packages', builder: (_, _) => _shell(ref, const AdminPrimPackagesScreen())),
       GoRoute(path: '/admin/prim-records', builder: (_, _) => _shell(ref, const AdminPrimRecordsScreen())),

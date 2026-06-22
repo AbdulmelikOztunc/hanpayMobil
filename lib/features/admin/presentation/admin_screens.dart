@@ -1,13 +1,13 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
-import 'package:hanpay_mobil/features/agent/data/agent_repository.dart';
 import 'package:hanpay_mobil/features/admin/data/admin_repository.dart';
+import 'package:hanpay_mobil/features/admin/presentation/admin_partner_dialogs.dart';
 import 'package:hanpay_mobil/features/transfers/presentation/agent_transfer_detail_screen.dart';
 import 'package:hanpay_mobil/shared/models/admin_models.dart';
-import 'package:hanpay_mobil/shared/models/balance_models.dart';
 import 'package:hanpay_mobil/shared/models/state_model.dart';
+import 'package:hanpay_mobil/shared/utils/balance_ledger_export.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 import 'package:hanpay_mobil/shared/widgets/stat_card.dart';
 import 'package:intl/intl.dart';
@@ -338,10 +338,30 @@ class _AdminTransfersScreenState extends ConsumerState<AdminTransfersScreen> {
                               '${r.agentName ?? '-'} · ${r.receiverFullName ?? '-'}\n${dateFmt.format(r.createdAt.toLocal())}',
                             ),
                             isThreeLine: true,
-                            trailing: Text(formatUsd(r.amount)),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(formatUsd(r.amount)),
+                                if (canAdminCancelTransfer(r.status))
+                                  TextButton(
+                                    onPressed: () async {
+                                      final cancelled = await showAdminCancelTransferDialog(
+                                        context,
+                                        ref,
+                                        transferId: r.id,
+                                      );
+                                      if (cancelled) {
+                                        ref.invalidate(adminTransfersProvider(filters));
+                                      }
+                                    },
+                                    child: const Text('İptal'),
+                                  ),
+                              ],
+                            ),
                             onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => AgentTransferDetailScreen(id: r.id),
+                                builder: (_) => AgentTransferDetailScreen(id: r.id, allowAdminCancel: true),
                               ),
                             ),
                           ),
@@ -366,215 +386,39 @@ class AdminAgentsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminAgentsProvider);
-    return async.when(
-      loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminAgentsProvider)),
-      data: (agents) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(adminAgentsProvider),
-        child: ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: agents.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final a = agents[index];
-            return Card(
-              child: ListTile(
-                title: Text(a.name),
-                subtitle: Text('${a.code} · ${a.isActive ? 'Aktif' : 'Pasif'}'),
-                trailing: Text(formatUsd(a.balance)),
-                onTap: () => context.push('/admin/agents/${a.id}'),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-final adminAgentDetailProvider = FutureProvider.autoDispose.family<AdminAgentDto, int>((ref, id) {
-  return ref.watch(adminRepositoryProvider).getAgent(id);
-});
-
-final adminAgentSummaryProvider = FutureProvider.autoDispose.family<AgentDetailStatistics?, int>((ref, id) {
-  return ref.watch(adminRepositoryProvider).getAgentSummary(id);
-});
-
-final adminAgentTransactionsProvider =
-    FutureProvider.autoDispose.family<List<AgentTransactionRow>, int>((ref, id) {
-  return ref.watch(adminRepositoryProvider).getAgentTransactions(id);
-});
-
-class AdminAgentDetailScreen extends ConsumerWidget {
-  const AdminAgentDetailScreen({super.key, required this.id});
-  final int id;
-
-  Future<void> _reactivate(BuildContext context, WidgetRef ref) async {
-    try {
-      await ref.read(adminRepositoryProvider).reactivateAgent(id);
-      ref.invalidate(adminAgentDetailProvider(id));
-      ref.invalidate(adminAgentsProvider);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Acente yeniden aktifleştirildi.')));
-      }
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  Future<void> _adjustBalance(BuildContext context, WidgetRef ref, {required bool credit}) async {
-    final amountCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(credit ? 'Bakiye yükle' : 'Bakiye düş'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Tutar (USD)'),
-            ),
-            TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Açıklama')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Uygula')),
-        ],
-      ),
-    );
-    final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
-    final description = descCtrl.text.trim();
-    amountCtrl.dispose();
-    descCtrl.dispose();
-    if (ok != true || amount <= 0) return;
-    try {
-      if (credit) {
-        await ref.read(agentRepositoryProvider).creditAgentBalance(id, amount: amount, description: description);
-      } else {
-        await ref.read(agentRepositoryProvider).debitAgentBalance(id, amount: amount, description: description);
-      }
-      ref.invalidate(adminAgentDetailProvider(id));
-      ref.invalidate(adminAgentsProvider);
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminAgentDetailProvider(id));
-    final summaryAsync = ref.watch(adminAgentSummaryProvider(id));
-    final txAsync = ref.watch(adminAgentTransactionsProvider(id));
-    final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
     return Scaffold(
-      appBar: AppBar(title: const Text('Acente detayı')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          await showCreateAgentDialog(context, ref);
+          ref.invalidate(adminAgentsProvider);
+        },
+        child: const Icon(Icons.add),
+      ),
       body: async.when(
         loading: () => const LoadingView(),
-        error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminAgentDetailProvider(id))),
-        data: (a) => ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(a.name, style: Theme.of(context).textTheme.headlineSmall),
-            Text('Kod: ${a.code}'),
-            const SizedBox(height: 16),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.4,
-              children: [
-                StatCard(label: 'Bakiye', value: formatUsd(a.balance), icon: Icons.account_balance_wallet),
-                if (a.creditLimit != null)
-                  StatCard(label: 'Kredi limiti', value: formatUsd(a.creditLimit!), icon: Icons.credit_score),
-                if (a.commissionRate != null)
-                  StatCard(label: 'Komisyon', value: '${(a.commissionRate! * 100).toStringAsFixed(2)}%', icon: Icons.percent),
-                StatCard(label: 'Durum', value: a.isActive ? 'Aktif' : 'Pasif', icon: Icons.info_outline),
-              ],
-            ),
-            summaryAsync.when(
-              loading: () => const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (stats) {
-                if (stats == null) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 16),
-                    Text('İstatistikler', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.5,
-                      children: [
-                        StatCard(label: 'Toplam transfer', value: '${stats.totalTransfers}', icon: Icons.swap_horiz),
-                        StatCard(label: 'Toplam tutar', value: formatUsd(stats.totalAmount), icon: Icons.payments),
-                        StatCard(label: 'Ödenen', value: '${stats.paidCount}', icon: Icons.check_circle_outline),
-                        StatCard(label: 'Başarı oranı', value: '${stats.successRate.toStringAsFixed(1)}%', icon: Icons.trending_up),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _adjustBalance(context, ref, credit: true),
-                    child: const Text('Bakiye yükle'),
-                  ),
+        error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminAgentsProvider)),
+        data: (agents) => RefreshIndicator(
+          onRefresh: () async => ref.invalidate(adminAgentsProvider),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: agents.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final a = agents[index];
+              return Card(
+                child: ListTile(
+                  title: Text(a.name),
+                  subtitle: Text('${a.code} · ${a.isActive ? 'Aktif' : 'Pasif'}'),
+                  trailing: Text(formatUsd(a.balance)),
+                  onTap: () => context.push('/admin/agents/${a.id}'),
+                  onLongPress: () async {
+                    await showEditAgentDialog(context, ref, a);
+                    ref.invalidate(adminAgentsProvider);
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _adjustBalance(context, ref, credit: false),
-                    child: const Text('Bakiye düş'),
-                  ),
-                ),
-              ],
-            ),
-            if (!a.isActive) ...[
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: () => _reactivate(context, ref),
-                child: const Text('Yeniden aktifleştir'),
-              ),
-            ],
-            const SizedBox(height: 24),
-            Text('Bakiye hareketleri', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            txAsync.when(
-              loading: () => const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
-              error: (e, _) => Text('Hareketler yüklenemedi: $e'),
-              data: (items) => items.isEmpty
-                  ? const Text('Kayıt yok.')
-                  : Column(
-                      children: items
-                          .map(
-                            (t) => Card(
-                              child: ListTile(
-                                title: Text(formatUsd(t.amount)),
-                                subtitle: Text('${t.transactionType}\n${t.description}\n${dateFmt.format(t.date.toLocal())}'),
-                                isThreeLine: true,
-                                trailing: Text(formatUsd(t.balanceAfter), style: const TextStyle(fontSize: 12)),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-            ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -591,233 +435,45 @@ class AdminDistributorsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(adminDistributorsProvider);
-    return async.when(
-      loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminDistributorsProvider)),
-      data: (items) => RefreshIndicator(
-        onRefresh: () async => ref.invalidate(adminDistributorsProvider),
-        child: ListView.separated(
-          padding: const EdgeInsets.all(12),
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final d = items[index];
-            return Card(
-              child: ListTile(
-                title: Text(d.name),
-                subtitle: Text('${d.code} · ${d.stateName ?? '-'}'),
-                trailing: Text(formatUsd(d.balance)),
-                onTap: () => context.push('/admin/distributors/${d.id}'),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-final adminDistributorDetailProvider =
-    FutureProvider.autoDispose.family<AdminDistributorDto, int>((ref, id) {
-  return ref.watch(adminRepositoryProvider).getDistributor(id);
-});
-
-final adminDistributorBalanceHistoryProvider =
-    FutureProvider.autoDispose.family<List<AgentTransactionRow>, int>((ref, id) {
-  return ref.watch(adminRepositoryProvider).getDistributorBalanceHistory(id);
-});
-
-final adminDistributorEarnedPrimsProvider =
-    FutureProvider.autoDispose.family<List<DistributorPrimRow>?, int>((ref, id) {
-  return ref.watch(adminRepositoryProvider).getDistributorEarnedPrims(id);
-});
-
-class AdminDistributorDetailScreen extends ConsumerWidget {
-  const AdminDistributorDetailScreen({super.key, required this.id});
-  final int id;
-
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Dağıtıcıyı sil'),
-        content: const Text('Bu dağıtıcıyı silmek istediğinize emin misiniz?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sil')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await ref.read(adminRepositoryProvider).deleteDistributor(id);
-      ref.invalidate(adminDistributorsProvider);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dağıtıcı silindi.')));
-        context.pop();
-      }
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  Future<void> _adjustBalance(BuildContext context, WidgetRef ref, {required bool credit}) async {
-    final amountCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(credit ? 'Bakiye yükle' : 'Bakiye düş'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Tutar (USD)'),
-            ),
-            TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Açıklama')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Uygula')),
-        ],
-      ),
-    );
-    final amount = double.tryParse(amountCtrl.text.replaceAll(',', '.')) ?? 0;
-    final description = descCtrl.text.trim();
-    amountCtrl.dispose();
-    descCtrl.dispose();
-    if (ok != true || amount <= 0) return;
-    try {
-      if (credit) {
-        await ref.read(adminRepositoryProvider).creditDistributorBalance(id, amount: amount, description: description);
-      } else {
-        await ref.read(adminRepositoryProvider).debitDistributorBalance(id, amount: amount, description: description);
-      }
-      ref.invalidate(adminDistributorDetailProvider(id));
-      ref.invalidate(adminDistributorsProvider);
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminDistributorDetailProvider(id));
-    final historyAsync = ref.watch(adminDistributorBalanceHistoryProvider(id));
-    final primsAsync = ref.watch(adminDistributorEarnedPrimsProvider(id));
-    final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dağıtıcı detayı'),
-        actions: [
-          IconButton(
-            tooltip: 'Sil',
-            onPressed: () => _delete(context, ref),
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          await showCreateDistributorDialog(context, ref);
+          ref.invalidate(adminDistributorsProvider);
+        },
+        child: const Icon(Icons.add),
       ),
       body: async.when(
         loading: () => const LoadingView(),
-        error: (e, _) =>
-            ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminDistributorDetailProvider(id))),
-        data: (d) => ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(d.name, style: Theme.of(context).textTheme.headlineSmall),
-            Text('Kod: ${d.code}'),
-            if (d.stateName != null) Text('Eyalet: ${d.stateName}'),
-            const SizedBox(height: 16),
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 1.4,
-              children: [
-                StatCard(label: 'Bakiye', value: formatUsd(d.balance), icon: Icons.account_balance_wallet),
-                StatCard(label: 'Durum', value: d.isActive ? 'Aktif' : 'Pasif', icon: Icons.info_outline),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _adjustBalance(context, ref, credit: true),
-                    child: const Text('Bakiye yükle'),
-                  ),
+        error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminDistributorsProvider)),
+        data: (items) => RefreshIndicator(
+          onRefresh: () async => ref.invalidate(adminDistributorsProvider),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final d = items[index];
+              return Card(
+                child: ListTile(
+                  title: Text(d.name),
+                  subtitle: Text('${d.code} · ${d.stateName ?? '-'}'),
+                  trailing: Text(formatUsd(d.balance)),
+                  onTap: () => context.push('/admin/distributors/${d.id}'),
+                  onLongPress: () async {
+                    await showEditDistributorDialog(context, ref, d);
+                    ref.invalidate(adminDistributorsProvider);
+                  },
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _adjustBalance(context, ref, credit: false),
-                    child: const Text('Bakiye düş'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text('Bakiye hareketleri', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            historyAsync.when(
-              loading: () => const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
-              error: (e, _) => Text('Hareketler yüklenemedi: $e'),
-              data: (items) => items.isEmpty
-                  ? const Text('Kayıt yok.')
-                  : Column(
-                      children: items
-                          .map(
-                            (t) => Card(
-                              child: ListTile(
-                                title: Text(formatUsd(t.amount)),
-                                subtitle: Text('${t.transactionType}\n${t.description}\n${dateFmt.format(t.date.toLocal())}'),
-                                isThreeLine: true,
-                                trailing: Text(formatUsd(t.balanceAfter), style: const TextStyle(fontSize: 12)),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-            ),
-            const SizedBox(height: 24),
-            Text('Kazanılan primler', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            primsAsync.when(
-              loading: () => const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
-              error: (e, _) => Text('Primler yüklenemedi: $e'),
-              data: (items) {
-                if (items == null || items.isEmpty) return const Text('Prim kaydı yok.');
-                return Column(
-                  children: items
-                      .map(
-                        (p) => Card(
-                          child: ListTile(
-                            title: Text(p.transferNumber),
-                            subtitle: Text(dateFmt.format(p.earnedAt.toLocal())),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(formatUsd(p.primAmount), style: const TextStyle(fontWeight: FontWeight.w600)),
-                                if (p.isReversed) const Text('İade', style: TextStyle(fontSize: 11, color: Colors.orange)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                );
-              },
-            ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
 }
+
 
 final adminUsersProvider = FutureProvider.autoDispose((ref) {
   return ref.watch(adminRepositoryProvider).getUsers();
@@ -914,6 +570,7 @@ class AdminUsersScreen extends ConsumerWidget {
                     u.isActive ? Icons.check_circle : Icons.block,
                     color: u.isActive ? Colors.green : Colors.grey,
                   ),
+                  onTap: () => context.push('/admin/users/${u.id}'),
                 ),
               );
             },
@@ -1308,10 +965,34 @@ class _AdminCashboxScreenState extends ConsumerState<AdminCashboxScreen> {
     }
   }
 
+  Future<void> _exportLedger(CashboxesSummary data) async {
+    final rows = data.centralDayEntries
+        .where((e) => !e.isReportingOnly)
+        .map(
+          (e) => BalanceLedgerExportRow(
+            date: e.createdAt,
+            title: e.description.isEmpty ? (e.isCredit ? 'Giriş' : 'Çıkış') : e.description,
+            subtitle: e.counterparty,
+            amount: e.amount,
+            isCredit: e.isCredit,
+          ),
+        )
+        .toList();
+    await shareBalanceLedgerCsv(
+      filenamePrefix: 'merkez-kasa',
+      openingBalance: data.openingBalance ?? data.centralBalance,
+      closingBalance: data.centralBalance,
+      rows: rows,
+      from: _fromDate,
+      to: _toDate,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filters = _filters;
     final async = ref.watch(adminCashboxProvider(filters));
+    final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
     return async.when(
       loading: () => const LoadingView(),
       error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminCashboxProvider(filters))),
@@ -1339,6 +1020,11 @@ class _AdminCashboxScreenState extends ConsumerState<AdminCashboxScreen> {
                   }),
                   icon: const Icon(Icons.clear),
                 ),
+              IconButton(
+                tooltip: 'Excel/CSV indir',
+                onPressed: data.centralDayEntries.isEmpty ? null : () => _exportLedger(data),
+                icon: const Icon(Icons.download),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -1352,8 +1038,44 @@ class _AdminCashboxScreenState extends ConsumerState<AdminCashboxScreen> {
             children: [
               StatCard(label: 'Merkez kasa', value: formatUsd(data.centralBalance), icon: Icons.account_balance),
               StatCard(label: 'Net sistem varlığı', value: formatUsd(data.netSystemAsset), icon: Icons.analytics),
+              if (data.totalCommissionEarned > 0)
+                StatCard(
+                  label: 'Net komisyon',
+                  value: formatUsd(data.totalCommissionEarned),
+                  icon: Icons.percent,
+                ),
+              if (data.openingBalance != null)
+                StatCard(label: 'Devir', value: formatUsd(data.openingBalance!), icon: Icons.history),
             ],
           ),
+          if (data.centralDayEntries.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Merkez kasa hareketleri', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            ...data.centralDayEntries.map(
+              (e) => Card(
+                child: ListTile(
+                  title: Text(e.description.isEmpty ? e.counterparty : e.description),
+                  subtitle: Text(dateFmt.format(e.createdAt.toLocal())),
+                  trailing: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${e.isCredit ? '+' : '-'}${formatUsd(e.amount)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: e.isCredit ? Colors.green.shade700 : Colors.red.shade700,
+                        ),
+                      ),
+                      if (e.isReportingOnly)
+                        const Text('Rapor', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Text('Kullanıcı kasaları', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -1368,107 +1090,6 @@ class _AdminCashboxScreenState extends ConsumerState<AdminCashboxScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-final adminPrimRecordsProvider = FutureProvider.autoDispose((ref) {
-  final now = DateTime.now();
-  return ref.watch(adminRepositoryProvider).getAllPrims(year: now.year, month: now.month);
-});
-
-class AdminPrimRecordsScreen extends ConsumerWidget {
-  const AdminPrimRecordsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminPrimRecordsProvider);
-    return async.when(
-      loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminPrimRecordsProvider)),
-      data: (rows) => ListView.separated(
-        padding: const EdgeInsets.all(12),
-        itemCount: rows.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, index) {
-          final r = rows[index];
-          return Card(
-            child: ListTile(
-              title: Text('#${r.transferNumber}'),
-              subtitle: Text(r.distributorName ?? '-'),
-              trailing: Text(formatUsd(r.primAmount)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-final adminPrimPackagesProvider = FutureProvider.autoDispose((ref) {
-  return ref.watch(adminRepositoryProvider).getPrimPackages();
-});
-
-class AdminPrimPackagesScreen extends ConsumerWidget {
-  const AdminPrimPackagesScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(adminPrimPackagesProvider);
-    return async.when(
-      loading: () => const LoadingView(),
-      error: (e, _) => ErrorView(message: e.toString(), onRetry: () => ref.invalidate(adminPrimPackagesProvider)),
-      data: (rows) => ListView.separated(
-        padding: const EdgeInsets.all(12),
-        itemCount: rows.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
-        itemBuilder: (context, index) {
-          final p = rows[index];
-          return Card(
-            child: ListTile(
-              title: Text(p.name),
-              subtitle: Text(p.distributorName ?? '-'),
-              trailing: Icon(p.isActive ? Icons.check_circle : Icons.pause_circle, color: p.isActive ? Colors.green : Colors.grey),
-              onTap: () async {
-                try {
-                  final detail = await ref.read(adminRepositoryProvider).getPrimPackage(p.id);
-                  if (!context.mounted) return;
-                  await showDialog<void>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(detail.name),
-                      content: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Durum: ${detail.isActive ? 'Aktif' : 'Pasif'}'),
-                            const SizedBox(height: 12),
-                            ...detail.brackets.map(
-                              (b) => Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  '${formatUsd(b.minAmountUsd)} – ${formatUsd(b.maxAmountUsd)} → ${formatUsd(b.primUsdPerTransfer)}',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat')),
-                      ],
-                    ),
-                  );
-                } on ApiException catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-                  }
-                }
-              },
-            ),
-          );
-        },
       ),
     );
   }

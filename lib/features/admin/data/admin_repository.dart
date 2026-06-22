@@ -268,13 +268,18 @@ class AdminRepository {
     }
   }
 
-  Future<List<DistributorPrimRow>> getAllPrims({int? year, int? month}) async {
+  Future<List<DistributorPrimRow>> getAllPrims({
+    int? year,
+    int? month,
+    int? distributorId,
+  }) async {
     try {
       final response = await _dio.get<List<dynamic>>(
         '/distributors/prims',
         queryParameters: {
           if (year != null) 'year': year,
           if (month != null) 'month': month,
+          if (distributorId != null) 'distributorId': distributorId,
         },
       );
       return (response.data ?? [])

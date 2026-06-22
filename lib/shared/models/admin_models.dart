@@ -14,6 +14,7 @@ class AdminRequestDto {
     this.transferState,
     this.transferStateId,
     this.netCommissionUsd,
+    this.createdByUserId,
   });
 
   final int id;
@@ -27,6 +28,7 @@ class AdminRequestDto {
   final String? transferState;
   final int? transferStateId;
   final double? netCommissionUsd;
+  final int? createdByUserId;
 
   bool get isCancellationRequest =>
       type.toLowerCase().contains('cancellation') || type.toLowerCase().contains('iptal');
@@ -48,6 +50,7 @@ class AdminRequestDto {
         transferState: json['transferState'] as String?,
         transferStateId: (json['transferStateId'] as num?)?.toInt(),
         netCommissionUsd: (json['netCommissionUsd'] as num?)?.toDouble(),
+        createdByUserId: (json['createdByUserId'] as num?)?.toInt(),
       );
 }
 
@@ -118,6 +121,8 @@ class AdminTransferRow {
     this.agentName,
     this.distributorName,
     this.receiverFullName,
+    this.agentId,
+    this.distributorId,
   });
 
   final int id;
@@ -128,6 +133,8 @@ class AdminTransferRow {
   final String? agentName;
   final String? distributorName;
   final String? receiverFullName;
+  final int? agentId;
+  final int? distributorId;
 
   factory AdminTransferRow.fromJson(Map<String, dynamic> json) => AdminTransferRow(
         id: jsonInt(json['id']),
@@ -138,6 +145,9 @@ class AdminTransferRow {
         agentName: json['agentName'] as String? ?? json['createdByAgentName'] as String?,
         distributorName: json['distributorName'] as String? ?? json['assignedDistributorName'] as String?,
         receiverFullName: json['receiverFullName'] as String?,
+        agentId: (json['agentId'] as num?)?.toInt() ??
+            (json['createdByAgentId'] as num?)?.toInt(),
+        distributorId: (json['distributorId'] as num?)?.toInt(),
       );
 }
 
@@ -163,12 +173,20 @@ class CashboxesSummary {
     required this.currency,
     required this.netSystemAsset,
     required this.userCashboxes,
+    this.openingBalance,
+    this.totalCommissionEarned = 0,
+    this.centralDayEntries = const [],
+    this.commissionEntries = const [],
   });
 
   final double centralBalance;
   final String currency;
   final double netSystemAsset;
   final List<UserCashboxRow> userCashboxes;
+  final double? openingBalance;
+  final double totalCommissionEarned;
+  final List<CashboxLedgerEntry> centralDayEntries;
+  final List<CashboxLedgerEntry> commissionEntries;
 
   factory CashboxesSummary.fromJson(Map<String, dynamic> json) {
     final central = json['centralCashbox'] as Map<String, dynamic>? ?? {};
@@ -176,13 +194,66 @@ class CashboxesSummary {
         .map((e) => UserCashboxRow.fromJson(e as Map<String, dynamic>))
         .toList();
     final net = json['netSystemAsset'] as Map<String, dynamic>?;
+    List<CashboxLedgerEntry> parseEntries(Object? raw) => (raw as List<dynamic>? ?? [])
+        .map((e) => CashboxLedgerEntry.fromJson(e as Map<String, dynamic>))
+        .toList();
     return CashboxesSummary(
       centralBalance: jsonDouble(central['balance']),
       currency: jsonStr(central['currency']).isEmpty ? 'USD' : jsonStr(central['currency']),
       netSystemAsset: jsonDouble(net?['amount'] ?? net?['balance']),
       userCashboxes: users,
+      openingBalance: (central['openingBalance'] as num?)?.toDouble(),
+      totalCommissionEarned: jsonDouble(json['totalCommissionEarned']),
+      centralDayEntries: parseEntries(json['centralDayEntries']),
+      commissionEntries: parseEntries(json['commissionEntries']),
     );
   }
+}
+
+class CashboxLedgerEntry {
+  const CashboxLedgerEntry({
+    required this.id,
+    required this.isCredit,
+    required this.amount,
+    required this.balanceAfter,
+    required this.description,
+    required this.createdAt,
+    this.agentName,
+    this.distributorName,
+    this.transferNumber,
+    this.isReportingOnly = false,
+  });
+
+  final int id;
+  final bool isCredit;
+  final double amount;
+  final double balanceAfter;
+  final String description;
+  final DateTime createdAt;
+  final String? agentName;
+  final String? distributorName;
+  final String? transferNumber;
+  final bool isReportingOnly;
+
+  String get counterparty {
+    if (agentName != null && agentName!.isNotEmpty) return agentName!;
+    if (distributorName != null && distributorName!.isNotEmpty) return distributorName!;
+    if (transferNumber != null && transferNumber!.isNotEmpty) return '#$transferNumber';
+    return description;
+  }
+
+  factory CashboxLedgerEntry.fromJson(Map<String, dynamic> json) => CashboxLedgerEntry(
+        id: jsonInt(json['id']),
+        isCredit: json['isCredit'] == true,
+        amount: jsonDouble(json['amount']),
+        balanceAfter: jsonDouble(json['balanceAfter']),
+        description: jsonStr(json['description']),
+        createdAt: jsonDate(json['createdAt']),
+        agentName: json['agentName'] as String?,
+        distributorName: json['distributorName'] as String?,
+        transferNumber: json['transferNumber'] as String?,
+        isReportingOnly: json['isReportingOnly'] == true,
+      );
 }
 
 class UserCashboxRow {

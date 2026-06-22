@@ -31,4 +31,10 @@ abstract final class Env {
   }
 
   static String get notificationsHubUrl => '$hubOrigin/hubs/notifications';
+
+  /// Uploaded files (receipts etc.) — same origin as API without `/api` suffix.
+  static String assetUrl(String path) {
+    final clean = path.replaceFirst(RegExp(r'^/+'), '');
+    return '$hubOrigin/$clean';
+  }
 }

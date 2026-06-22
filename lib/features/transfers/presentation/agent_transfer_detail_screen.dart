@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hanpay_mobil/core/env.dart';
+import 'package:hanpay_mobil/features/admin/presentation/admin_partner_dialogs.dart';
 import 'package:hanpay_mobil/core/i18n/app_locale.dart';
 import 'package:hanpay_mobil/core/i18n/translator_ext.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
@@ -18,9 +20,10 @@ final transferByIdProvider =
 });
 
 class AgentTransferDetailScreen extends ConsumerWidget {
-  const AgentTransferDetailScreen({super.key, required this.id});
+  const AgentTransferDetailScreen({super.key, required this.id, this.allowAdminCancel = false});
 
   final int id;
+  final bool allowAdminCancel;
 
   Future<void> _showReceipt(BuildContext context, WidgetRef ref, TransferDto tx) async {
     final locale = ref.read(localeControllerProvider);
@@ -185,6 +188,11 @@ class AgentTransferDetailScreen extends ConsumerWidget {
                     _Row(label: 'İptal talebi', value: tx.pendingCancellationReason!),
                 ],
               ),
+              if (tx.distributorReceiptFilePath != null &&
+                  tx.distributorReceiptFilePath!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _DistributorReceiptSection(path: tx.distributorReceiptFilePath!),
+              ],
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: () => _showReceipt(context, ref, tx),
@@ -211,6 +219,23 @@ class AgentTransferDetailScreen extends ConsumerWidget {
                   onPressed: () => _requestCancellation(context, ref, tx),
                   icon: const Icon(Icons.cancel_outlined),
                   label: const Text('İptal talebi gönder'),
+                ),
+              ],
+              if (allowAdminCancel && canAdminCancelTransfer(tx.status)) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final cancelled = await showAdminCancelTransferDialog(
+                      context,
+                      ref,
+                      transferId: tx.id,
+                      netCommissionUsd: tx.netCommissionUsd,
+                    );
+                    if (cancelled) ref.invalidate(transferByIdProvider(id));
+                  },
+                  icon: const Icon(Icons.block),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                  label: const Text('Admin iptali'),
                 ),
               ],
             ],
@@ -274,6 +299,44 @@ class _Row extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DistributorReceiptSection extends StatelessWidget {
+  const _DistributorReceiptSection({required this.path});
+
+  final String path;
+
+  bool get _isImage => RegExp(r'\.(jpe?g|png|webp|gif)$', caseSensitive: false).hasMatch(path);
+
+  @override
+  Widget build(BuildContext context) {
+    final url = Env.assetUrl(path);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Dağıtıcı makbuzu', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            if (_isImage)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(url, fit: BoxFit.contain),
+              )
+            else
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.attach_file),
+                title: const Text('Makbuzu görüntüle'),
+                subtitle: Text(path),
+                onTap: () {},
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

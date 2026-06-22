@@ -4,11 +4,18 @@ import 'package:go_router/go_router.dart';
 import 'package:hanpay_mobil/core/network/api_exception.dart';
 import 'package:hanpay_mobil/features/agent/data/agent_repository.dart';
 import 'package:hanpay_mobil/features/dashboard/data/dashboard_repository.dart';
+import 'package:hanpay_mobil/features/transfers/data/transfer_repository.dart';
 import 'package:hanpay_mobil/shared/widgets/async_views.dart';
 import 'package:hanpay_mobil/shared/widgets/stat_card.dart';
+import 'package:hanpay_mobil/shared/widgets/transfer_status_chip.dart';
+import 'package:intl/intl.dart';
 
 final agentDashboardProvider = FutureProvider.autoDispose((ref) {
   return ref.watch(dashboardRepositoryProvider).getAgentDashboard();
+});
+
+final agentDashboardTransfersProvider = FutureProvider.autoDispose((ref) {
+  return ref.watch(transferRepositoryProvider).getMyAgentTransfers();
 });
 
 class AgentDashboardScreen extends ConsumerWidget {
@@ -45,6 +52,8 @@ class AgentDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(agentDashboardProvider);
+    final transfersAsync = ref.watch(agentDashboardTransfersProvider);
+    final dateFmt = DateFormat('dd.MM.yyyy HH:mm');
 
     return async.when(
       loading: () => const LoadingView(message: 'Dashboard yükleniyor...'),
@@ -108,6 +117,45 @@ class AgentDashboardScreen extends ConsumerWidget {
                 trailing: Text(data.usdTryExchangeRate?.toStringAsFixed(4) ?? '-'),
                 onTap: () => _editExchangeRate(context, ref, data.usdTryExchangeRate),
               ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Son havaleler', style: Theme.of(context).textTheme.titleMedium),
+                TextButton(onPressed: () => context.go('/agent/transfers'), child: const Text('Tümü')),
+              ],
+            ),
+            transfersAsync.when(
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (transfers) {
+                final recent = [...transfers]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                final top = recent.take(5).toList();
+                if (top.isEmpty) return const Text('Henüz havale yok.');
+                return Column(
+                  children: top
+                      .map(
+                        (tx) => Card(
+                          child: ListTile(
+                            title: Text('#${tx.transferNumber}'),
+                            subtitle: Text('${tx.receiverFullName}\n${dateFmt.format(tx.createdAt.toLocal())}'),
+                            isThreeLine: true,
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(formatUsd(tx.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                                TransferStatusChip(status: tx.status),
+                              ],
+                            ),
+                            onTap: () => context.push('/agent/transfers/${tx.id}'),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
             ),
           ],
         ),
